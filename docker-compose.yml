@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reviewrush
+      POSTGRES_PASSWORD: reviewrush
+      POSTGRES_DB: reviewrush
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviewrush"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://reviewrush:reviewrush@postgres:5432/reviewrush
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8010:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/srv/app
+      - ./alembic:/srv/alembic
+
+  worker:
+    build:
+      context: .
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://reviewrush:reviewrush@postgres:5432/reviewrush
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/srv/app
+      - ./alembic:/srv/alembic
+
+volumes:
+  postgres_data:

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reviewrush
+          POSTGRES_PASSWORD: reviewrush
+          POSTGRES_DB: reviewrush_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reviewrush"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://reviewrush:reviewrush@localhost:5432/reviewrush_test
+      REDIS_URL: redis://localhost:6379/1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type check (mypy)
+        run: mypy app
+
+      - name: Run Alembic migrations
+        run: alembic upgrade head
+
+      - name: Test (pytest)
+        run: pytest -v
