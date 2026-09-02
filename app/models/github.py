@@ -37,6 +37,8 @@ class Repository(Base):
     name: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str] = mapped_column(String(511))
     default_branch: Mapped[str] = mapped_column(String(255), default="main")
+    source_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    target_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -44,6 +46,40 @@ class Repository(Base):
     )
 
     installation: Mapped["Installation"] = relationship(back_populates="repositories")
+    pull_requests: Mapped[list["PullRequest"]] = relationship(back_populates="repository")
+
+
+class PullRequest(Base):
+    """One GitHub pull request automatically maintained between a source and
+    target branch. head_sha/base_sha reflect the last push this record was
+    synchronized against — later phases must never treat a decision made for
+    an older head_sha as valid for a newer one.
+    """
+
+    __tablename__ = "pull_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "repository_id", "github_pr_number", name="uq_pull_requests_repo_pr_number"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    repository_id: Mapped[int] = mapped_column(ForeignKey("repositories.id"), index=True)
+    github_pr_number: Mapped[int] = mapped_column()
+    head_branch: Mapped[str] = mapped_column(String(255))
+    base_branch: Mapped[str] = mapped_column(String(255))
+    head_sha: Mapped[str] = mapped_column(String(40))
+    base_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    state: Mapped[str] = mapped_column(String(32), default="open")
+    last_synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    repository: Mapped["Repository"] = relationship(back_populates="pull_requests")
 
 
 class WebhookDelivery(Base):
