@@ -4,9 +4,15 @@ from typing import Any
 
 from app.celery_app import celery_app
 from app.db import SessionLocal
+from app.github.auth import get_installation_access_token
+from app.github.client import GitHubClient
+from app.github.pr_automation import resolve_branches, sync_pull_request_for_push
 from app.models import Installation, Repository, WebhookDelivery
+from app.repo_config import parse_repo_config
 
 logger = logging.getLogger(__name__)
+
+REPO_CONFIG_PATH = ".reviewrush.yml"
 
 
 def _mark_delivery(db: Any, delivery_id: str, status: str) -> None:
@@ -98,9 +104,74 @@ def _handle_installation_repositories(db: Any, payload: dict) -> None:
     db.commit()
 
 
+def _handle_push(db: Any, payload: dict) -> None:
+    ref = payload.get("ref") or ""
+    if not ref.startswith("refs/heads/"):
+        return
+    branch = ref.removeprefix("refs/heads/")
+
+    sender = payload.get("sender") or {}
+    if sender.get("type") == "Bot":
+        logger.info("ignoring push from a bot sender to avoid automation loops")
+        return
+
+    installation_payload = payload.get("installation") or {}
+    github_installation_id = installation_payload.get("id")
+    repository_payload = payload.get("repository") or {}
+    github_repo_id = repository_payload.get("id")
+
+    repository = db.query(Repository).filter_by(github_repo_id=github_repo_id).one_or_none()
+    if repository is None or not repository.is_active:
+        logger.warning(
+            "push event for unknown or inactive repository",
+            extra={"github_repo_id": github_repo_id},
+        )
+        return
+
+    if not github_installation_id:
+        logger.warning(
+            "push event missing installation id", extra={"repository": repository.full_name}
+        )
+        return
+
+    if payload.get("deleted"):
+        logger.info(
+            "branch deleted, skipping PR automation",
+            extra={"repository": repository.full_name, "branch": branch},
+        )
+        return
+
+    head_sha = payload.get("after")
+    if not head_sha:
+        return
+
+    token = get_installation_access_token(github_installation_id)
+    with GitHubClient(token) as client:
+        config_yaml = client.get_file_contents(
+            repository.owner, repository.name, REPO_CONFIG_PATH, ref=branch
+        )
+        repo_config = parse_repo_config(config_yaml)
+        source_branch, target_branch = resolve_branches(repository, repo_config)
+
+        if branch != source_branch:
+            return
+
+        commits = payload.get("commits") or []
+        sync_pull_request_for_push(
+            db=db,
+            client=client,
+            repository=repository,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            head_sha=head_sha,
+            commits=commits,
+        )
+
+
 _HANDLERS = {
     "installation": _handle_installation,
     "installation_repositories": _handle_installation_repositories,
+    "push": _handle_push,
 }
 
 
