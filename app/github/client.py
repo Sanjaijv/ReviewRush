@@ -54,6 +54,14 @@ class GitHubClient:
             return None
         return base64.b64decode(body["content"]).decode("utf-8", errors="replace")
 
+    def compare_commits(self, owner: str, repo: str, base: str, head: str) -> dict:
+        """Return the GitHub merge-base comparison of base...head: commits,
+        the merge_base_commit, and per-file entries with status/patch/rename info.
+        """
+        response = self._client.get(f"/repos/{owner}/{repo}/compare/{base}...{head}")
+        response.raise_for_status()
+        return response.json()
+
     def list_open_pull_requests(
         self, owner: str, repo: str, head: str, base: str
     ) -> list[dict]:

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     github_webhook_secret: str = Field(default="")
     github_api_base_url: str = Field(default="https://api.github.com")
 
+    diff_max_files: int = Field(default=300)
+    diff_max_file_patch_bytes: int = Field(default=200_000)
+    diff_max_total_changed_lines: int = Field(default=6_000)
+    diff_max_total_prompt_bytes: int = Field(default=400_000)
+
     @property
     def celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url
