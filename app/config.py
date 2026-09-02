@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     celery_broker_url: str | None = Field(default=None)
     celery_result_backend: str | None = Field(default=None)
 
+    github_app_id: str = Field(default="")
+    github_private_key: str = Field(default="")
+    github_webhook_secret: str = Field(default="")
+    github_api_base_url: str = Field(default="https://api.github.com")
+
     @property
     def celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url

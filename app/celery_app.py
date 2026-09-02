@@ -8,7 +8,7 @@ celery_app = Celery(
     "reviewrush",
     broker=settings.celery_broker,
     backend=settings.celery_backend,
-    include=["app.tasks.sample"],
+    include=["app.tasks.sample", "app.tasks.github_webhook"],
 )
 
 celery_app.conf.update(
