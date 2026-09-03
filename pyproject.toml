@@ -42,6 +42,16 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# app/static/dashboard (Phase 12's dependency-free dashboard UI, served by
+# app/main.py via StaticFiles) has no __init__.py, so `packages.find` above
+# never picks it up as a package and a non-editable `pip install .` silently
+# omits it - app/main.py then fails at import time because the directory
+# doesn't exist in the installed copy. Package-data patterns are relative to
+# the "app" package's own directory tree and don't require each
+# subdirectory to be its own package.
+app = ["static/**/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
