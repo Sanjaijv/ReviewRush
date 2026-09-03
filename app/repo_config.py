@@ -26,6 +26,8 @@ class CheckConfig(BaseModel):
 
     command: str
     required: bool = True
+    image: str | None = None
+    timeout_seconds: int | None = Field(default=None, gt=0)
 
 
 class MergeConfig(BaseModel):

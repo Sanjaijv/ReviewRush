@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +10,9 @@ from app.config import get_settings
 from app.db import get_db
 from app.github.signature import verify_signature
 from app.models import WebhookDelivery
+from app.observability.metrics import webhook_request_latency_seconds
 from app.tasks.github_webhook import process_github_webhook
+from app.tenancy.rate_limit import check_webhook_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,20 @@ router = APIRouter(prefix="/github", tags=["github"])
 async def receive_webhook(
     request: Request, response: Response, db: Session = Depends(get_db)
 ) -> dict[str, str]:
+    started = time.monotonic()
+    event_type = request.headers.get("X-GitHub-Event") or "unknown"
+    outcome = "error"
+    try:
+        result = await _receive_webhook(request, response, db)
+        outcome = result["status"]
+        return result
+    finally:
+        webhook_request_latency_seconds.labels(event_type=event_type, status=outcome).observe(
+            time.monotonic() - started
+        )
+
+
+async def _receive_webhook(request: Request, response: Response, db: Session) -> dict[str, str]:
     settings = get_settings()
     raw_body = await request.body()
     signature_header = request.headers.get("X-Hub-Signature-256")
@@ -42,6 +59,8 @@ async def receive_webhook(
         return {"status": "invalid payload"}
 
     installation = payload.get("installation") or {}
+    check_webhook_rate_limit(settings, installation.get("id"))
+
     delivery = WebhookDelivery(
         delivery_id=delivery_id,
         event_type=event_type,

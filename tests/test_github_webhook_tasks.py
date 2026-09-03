@@ -3,13 +3,15 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.models import Installation, Repository, WebhookDelivery
+from app.models import Installation, RepoFileIndex, Repository, RepoSymbolChunk, WebhookDelivery
 from app.tasks.github_webhook import process_github_webhook
 
 
 @pytest.fixture(autouse=True)
 def _cleanup(db_session):
     yield
+    db_session.execute(text("DELETE FROM repo_symbol_chunks"))
+    db_session.execute(text("DELETE FROM repo_file_index"))
     db_session.execute(text("DELETE FROM repositories"))
     db_session.execute(text("DELETE FROM webhook_deliveries"))
     db_session.execute(text("DELETE FROM installations"))
@@ -68,6 +70,55 @@ def test_installation_deleted_deactivates_repositories(db_session) -> None:
     db_session.refresh(repo)
     assert installation.status == "deleted"
     assert repo.is_active is False
+
+
+def test_installation_deleted_purges_repo_index(db_session) -> None:
+    installation = Installation(
+        github_installation_id=1001, account_login="acme", account_type="Organization"
+    )
+    db_session.add(installation)
+    db_session.flush()
+    repo = Repository(
+        installation_id=installation.id,
+        github_repo_id=556,
+        owner="acme",
+        name="widgets",
+        full_name="acme/widgets",
+        is_active=True,
+    )
+    db_session.add(repo)
+    db_session.flush()
+    db_session.add(
+        RepoFileIndex(
+            repository_id=repo.id,
+            path="app.py",
+            content_sha="sha",
+            last_seen_commit_sha="sha1",
+        )
+    )
+    db_session.add(
+        RepoSymbolChunk(
+            repository_id=repo.id,
+            path="app.py",
+            symbol="changed",
+            kind="function",
+            start_line=1,
+            end_line=2,
+            content_sha="sha",
+            last_seen_commit_sha="sha1",
+        )
+    )
+    db_session.commit()
+
+    delivery_id = _delivery_id()
+    db_session.add(WebhookDelivery(delivery_id=delivery_id, event_type="installation"))
+    db_session.commit()
+
+    payload = {"action": "deleted", "installation": {"id": 1001, "account": {}}}
+    process_github_webhook.run(delivery_id=delivery_id, event_type="installation", payload=payload)
+
+    assert db_session.query(RepoFileIndex).filter_by(repository_id=repo.id).count() == 0
+    assert db_session.query(RepoSymbolChunk).filter_by(repository_id=repo.id).count() == 0
 
 
 def test_installation_repositories_added_creates_repository(db_session) -> None:
@@ -129,6 +180,53 @@ def test_installation_repositories_removed_deactivates_repository(db_session) ->
 
     db_session.refresh(repo)
     assert repo.is_active is False
+
+
+def test_installation_repositories_removed_purges_repo_index(db_session) -> None:
+    installation = Installation(
+        github_installation_id=3001, account_login="acme", account_type="Organization"
+    )
+    db_session.add(installation)
+    db_session.flush()
+    repo = Repository(
+        installation_id=installation.id,
+        github_repo_id=889,
+        owner="acme",
+        name="sprockets",
+        full_name="acme/sprockets",
+        is_active=True,
+    )
+    db_session.add(repo)
+    db_session.flush()
+    db_session.add(
+        RepoSymbolChunk(
+            repository_id=repo.id,
+            path="app.py",
+            symbol="changed",
+            kind="function",
+            start_line=1,
+            end_line=2,
+            content_sha="sha",
+            last_seen_commit_sha="sha1",
+        )
+    )
+    db_session.commit()
+
+    delivery_id = _delivery_id()
+    db_session.add(WebhookDelivery(delivery_id=delivery_id, event_type="installation_repositories"))
+    db_session.commit()
+
+    payload = {
+        "action": "removed",
+        "installation": {"id": 3001},
+        "repositories_added": [],
+        "repositories_removed": [{"id": 889, "full_name": "acme/sprockets"}],
+    }
+    process_github_webhook.run(
+        delivery_id=delivery_id, event_type="installation_repositories", payload=payload
+    )
+
+    assert db_session.query(RepoSymbolChunk).filter_by(repository_id=repo.id).count() == 0
 
 
 def test_unhandled_event_type_is_marked_processed(db_session) -> None:

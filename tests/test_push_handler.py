@@ -12,6 +12,9 @@ from app.tasks.github_webhook import process_github_webhook
 @pytest.fixture(autouse=True)
 def _cleanup(db_session):
     yield
+    db_session.execute(text("DELETE FROM tool_runs"))
+    db_session.execute(text("DELETE FROM changed_files"))
+    db_session.execute(text("DELETE FROM diff_snapshots"))
     db_session.execute(text("DELETE FROM pull_requests"))
     db_session.execute(text("DELETE FROM repositories"))
     db_session.execute(text("DELETE FROM webhook_deliveries"))
@@ -96,6 +99,11 @@ def _client_with_no_config_no_existing_pr(head_sha: str) -> MagicMock:
         "state": "open",
         "base": {"sha": "base-sha"},
     }
+    client.compare_commits.return_value = {
+        "merge_base_commit": {"sha": "merge-base-sha"},
+        "commits": [],
+        "files": [],
+    }
     return client
 
 
@@ -167,6 +175,11 @@ def test_repeat_push_updates_existing_open_pr(db_session, repository) -> None:
         "number": 99,
         "state": "open",
         "base": {"sha": "base-sha"},
+    }
+    second_client.compare_commits.return_value = {
+        "merge_base_commit": {"sha": "merge-base-sha"},
+        "commits": [],
+        "files": [],
     }
     _run_push(db_session, _push_payload(after="sha-2"), second_client)
 
