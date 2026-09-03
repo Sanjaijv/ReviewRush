@@ -18,6 +18,10 @@ def _cleanup(db_session):
     db_session.execute(text("DELETE FROM pull_requests"))
     db_session.execute(text("DELETE FROM repositories"))
     db_session.execute(text("DELETE FROM webhook_deliveries"))
+    # organizations/organization_members (Phase 17) before installations -
+    # see the identical note in test_github_webhook_tasks.py.
+    db_session.execute(text("DELETE FROM organization_members"))
+    db_session.execute(text("DELETE FROM organizations"))
     db_session.execute(text("DELETE FROM installations"))
     db_session.commit()
 

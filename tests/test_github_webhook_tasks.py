@@ -14,6 +14,12 @@ def _cleanup(db_session):
     db_session.execute(text("DELETE FROM repo_file_index"))
     db_session.execute(text("DELETE FROM repositories"))
     db_session.execute(text("DELETE FROM webhook_deliveries"))
+    # organizations/organization_members (Phase 17) are created automatically
+    # alongside an Installation (see app/tenancy/provisioning.py) and must be
+    # cleared before it, or the installations delete below violates the
+    # organizations_installation_id_fkey foreign key.
+    db_session.execute(text("DELETE FROM organization_members"))
+    db_session.execute(text("DELETE FROM organizations"))
     db_session.execute(text("DELETE FROM installations"))
     db_session.commit()
 
