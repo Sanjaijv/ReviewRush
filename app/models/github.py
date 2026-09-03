@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -40,6 +40,15 @@ class Repository(Base):
     source_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # Dashboard "repository-disconnect" control (Phase 12). A disconnected
+    # repository is treated as inactive (is_active is cleared alongside
+    # these) - new webhook activity for it is ignored. retention_days
+    # records how long stored review evidence should be kept before a
+    # (separately scheduled) cleanup process removes it; it does not itself
+    # delete anything.
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    disconnected_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

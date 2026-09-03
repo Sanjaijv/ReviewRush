@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -42,6 +43,9 @@ class DiffSnapshot(Base):
     merge_base_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     commits: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
+    # "complete" | "cancelled" (Phase 12 dashboard cancel control - a task
+    # entry point checks this and no-ops rather than starting new work once
+    # it's set; already-running work is not preemptively killed).
     status: Mapped[str] = mapped_column(String(32), default="complete")
     truncated: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -50,6 +54,11 @@ class DiffSnapshot(Base):
     total_deletions: Mapped[int] = mapped_column(Integer, default=0)
     total_changed_lines: Mapped[int] = mapped_column(Integer, default=0)
     total_patch_bytes: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Set once, at review start (Phase 8), when the in-progress Check Run is
+    # created for this immutable head_sha. Null if creation failed or hasn't
+    # run yet - the Phase 8 completion step creates one on the fly in that case.
+    github_check_run_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

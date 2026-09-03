@@ -12,7 +12,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector-enabled Postgres, matching docker-compose.yml - plain
+        # postgres:16-alpine lacks the `vector` extension the Phase 11
+        # 0011_symbol_chunks migration requires (`CREATE EXTENSION vector`),
+        # which fails the "Run Alembic migrations" step before tests ever run.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: reviewrush
           POSTGRES_PASSWORD: reviewrush

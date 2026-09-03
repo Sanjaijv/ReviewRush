@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector-enabled Postgres 16 image (Phase 11) - same Postgres as
+    # before, plus the `vector` extension the repo_symbol_chunks migration
+    # enables. Only exercised when CONTEXT_EMBEDDINGS_ENABLED=true.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: reviewrush
       POSTGRES_PASSWORD: reviewrush
@@ -52,6 +55,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://reviewrush:reviewrush@postgres:5432/reviewrush
       REDIS_URL: redis://redis:6379/0
+      ANALYSIS_WORKDIR: /var/lib/reviewrush/analysis
+      ANALYSIS_VOLUME_NAME: reviewrush_analysis_workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +65,20 @@ services:
     volumes:
       - ./app:/srv/app
       - ./alembic:/srv/alembic
+      # SECURITY: grants the worker container full control of the host's
+      # Docker daemon (equivalent to host root). Required only if
+      # ANALYSIS_SANDBOX_ENABLED=true, so the worker can launch the isolated,
+      # network-disabled containers that run untrusted PR code. Leave the
+      # pipeline disabled (the default) unless this tradeoff is acceptable
+      # for your deployment - see README for alternatives.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared with sandbox containers so a checked-out PR tree extracted by
+      # the worker is visible to them by volume name (not host path), which
+      # keeps working even though the worker and Docker daemon may see
+      # different filesystem namespaces.
+      - analysis_workspace:/var/lib/reviewrush/analysis
 
 volumes:
   postgres_data:
+  analysis_workspace:
+    name: reviewrush_analysis_workspace

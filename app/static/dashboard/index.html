@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReviewRush Dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
+  header { padding: 12px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+  main { padding: 20px; display: grid; grid-template-columns: 220px 1fr; gap: 20px; }
+  select, textarea, button { font: inherit; }
+  textarea { width: 100%; height: 260px; font-family: monospace; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #eee; padding: 6px 8px; text-align: left; font-size: 14px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #eee; }
+  .row { margin-bottom: 16px; }
+  pre { background: #f7f7f7; padding: 10px; overflow: auto; }
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <strong>ReviewRush Dashboard</strong>
+  <div id="who"></div>
+</header>
+<main>
+  <nav id="nav"></nav>
+  <section id="content"><p>Loading&hellip;</p></section>
+</main>
+<script>
+const API = "/api/v1/dashboard";
+
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({ credentials: "include" }, opts));
+  if (res.status === 401) { showLogin(); throw new Error("not authenticated"); }
+  if (!res.ok) throw new Error(await res.text());
+  return res.status === 204 ? null : res.json();
+}
+
+function showLogin() {
+  document.getElementById("who").innerHTML = "";
+  document.getElementById("nav").innerHTML = "";
+  document.getElementById("content").innerHTML =
+    '<p><a href="' + API + '/auth/login">Log in with GitHub</a></p>';
+}
+
+let state = { installationId: null, repositoryId: null };
+
+async function boot() {
+  let me;
+  try { me = await api("/me"); } catch (e) { return; }
+  document.getElementById("who").innerHTML =
+    '<img src="' + me.avatar_url + '" height="24" style="vertical-align:middle;border-radius:50%"> ' +
+    me.login + ' &middot; <a href="#" id="logout">log out</a>';
+  document.getElementById("logout").onclick = async (e) => {
+    e.preventDefault();
+    await fetch(API + "/auth/logout", { method: "POST", credentials: "include" });
+    location.reload();
+  };
+
+  const installations = await api("/installations");
+  const nav = document.getElementById("nav");
+  nav.innerHTML = "<h3>Installations</h3>";
+  const instSelect = document.createElement("select");
+  installations.forEach(i => {
+    const opt = document.createElement("option");
+    opt.value = i.id; opt.textContent = i.account_login;
+    instSelect.appendChild(opt);
+  });
+  nav.appendChild(instSelect);
+
+  const repoList = document.createElement("div");
+  repoList.style.marginTop = "10px";
+  nav.appendChild(repoList);
+
+  async function loadRepos() {
+    if (!instSelect.value) return;
+    const repos = await api("/installations/" + instSelect.value + "/repositories");
+    repoList.innerHTML = "";
+    repos.forEach(r => {
+      const btn = document.createElement("button");
+      btn.textContent = r.full_name + (r.is_active ? "" : " (disconnected)");
+      btn.style.display = "block";
+      btn.style.margin = "4px 0";
+      btn.onclick = () => loadRepository(r.id, r.full_name);
+      repoList.appendChild(btn);
+    });
+  }
+  instSelect.onchange = loadRepos;
+  if (installations.length) await loadRepos();
+}
+
+async function loadRepository(repositoryId, fullName) {
+  state.repositoryId = repositoryId;
+  const content = document.getElementById("content");
+  const [runs, metrics, auditLog, config, taskFailures] = await Promise.all([
+    api("/repositories/" + repositoryId + "/runs"),
+    api("/repositories/" + repositoryId + "/metrics"),
+    api("/repositories/" + repositoryId + "/audit-log"),
+    api("/repositories/" + repositoryId + "/config"),
+    api("/repositories/" + repositoryId + "/task-failures"),
+  ]);
+
+  content.innerHTML = "";
+  const h = document.createElement("h2");
+  h.textContent = fullName;
+  content.appendChild(h);
+
+  content.appendChild(section("Metrics", `<pre>${escapeHtml(JSON.stringify(metrics, null, 2))}</pre>`));
+
+  const disconnectBtn = document.createElement("button");
+  disconnectBtn.textContent = "Disconnect repository";
+  disconnectBtn.onclick = async () => {
+    if (!confirm("Disconnect this repository from ReviewRush?")) return;
+    await api("/repositories/" + repositoryId + "/disconnect", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    loadRepository(repositoryId, fullName);
+  };
+  content.appendChild(disconnectBtn);
+
+  const runsHtml = document.createElement("div");
+  runsHtml.innerHTML = "<h3>Review runs</h3>";
+  const table = document.createElement("table");
+  table.innerHTML = "<tr><th>SHA</th><th>Status</th><th>Files</th><th>When</th><th></th></tr>";
+  runs.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.head_sha.slice(0,7)}</td><td><span class="pill">${r.status}</span></td>` +
+      `<td>${r.file_count}</td><td>${new Date(r.created_at).toLocaleString()}</td><td></td>`;
+    const actionsCell = tr.lastElementChild;
+    const viewBtn = mkBtn("view", () => loadRunDetail(repositoryId, r.id));
+    const rerunBtn = mkBtn("rerun", async () => {
+      await api(`/repositories/${repositoryId}/runs/${r.id}/rerun`, { method: "POST" });
+      loadRepository(repositoryId, fullName);
+    });
+    const cancelBtn = mkBtn("cancel", async () => {
+      await api(`/repositories/${repositoryId}/runs/${r.id}/cancel`, { method: "POST" });
+      loadRepository(repositoryId, fullName);
+    });
+    actionsCell.append(viewBtn, rerunBtn, cancelBtn);
+    table.appendChild(tr);
+  });
+  runsHtml.appendChild(table);
+  content.appendChild(runsHtml);
+
+  const runDetailBox = document.createElement("div");
+  runDetailBox.id = "run-detail";
+  content.appendChild(runDetailBox);
+
+  const configBox = document.createElement("div");
+  configBox.innerHTML = "<h3>Configuration override</h3>" +
+    `<p>Source: ${config.source}${config.version ? " (v" + config.version + ")" : ""}</p>`;
+  const textarea = document.createElement("textarea");
+  textarea.value = JSON.stringify(config.config || { version: 1 }, null, 2);
+  configBox.appendChild(textarea);
+  const saveBtn = mkBtn("Save new version", async () => {
+    let parsed;
+    try { parsed = JSON.parse(textarea.value); } catch (e) { alert("invalid JSON"); return; }
+    try {
+      await api("/repositories/" + repositoryId + "/config", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: parsed }),
+      });
+      loadRepository(repositoryId, fullName);
+    } catch (e) { alert("save failed: " + e.message); }
+  });
+  configBox.appendChild(saveBtn);
+  content.appendChild(configBox);
+
+  const failuresHtml = document.createElement("div");
+  failuresHtml.innerHTML = "<h3>Unresolved task failures</h3>";
+  if (taskFailures.length === 0) {
+    failuresHtml.innerHTML += "<p>None.</p>";
+  } else {
+    const ftable = document.createElement("table");
+    ftable.innerHTML = "<tr><th>Task</th><th>Error</th><th>Retries</th><th>When</th><th></th></tr>";
+    taskFailures.forEach(f => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${f.task_name}</td><td>${escapeHtml(f.exception_type)}: ${escapeHtml(f.exception_message.slice(0,120))}</td>` +
+        `<td>${f.retry_count}</td><td>${new Date(f.created_at).toLocaleString()}</td><td></td>`;
+      const actionsCell = tr.lastElementChild;
+      const resolveBtn = mkBtn("resolve", async () => {
+        await api(`/repositories/${repositoryId}/task-failures/${f.id}/resolve`, { method: "POST" });
+        loadRepository(repositoryId, fullName);
+      });
+      actionsCell.append(resolveBtn);
+      ftable.appendChild(tr);
+    });
+    failuresHtml.appendChild(ftable);
+  }
+  content.appendChild(failuresHtml);
+
+  content.appendChild(section("Audit log",
+    "<pre>" + escapeHtml(JSON.stringify(auditLog, null, 2)) + "</pre>"));
+}
+
+async function loadRunDetail(repositoryId, runId) {
+  const detail = await api(`/repositories/${repositoryId}/runs/${runId}`);
+  document.getElementById("run-detail").innerHTML =
+    "<h4>Run detail</h4><pre>" + escapeHtml(JSON.stringify(detail, null, 2)) + "</pre>";
+}
+
+function mkBtn(label, onClick) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.marginLeft = "4px";
+  b.onclick = onClick;
+  return b;
+}
+
+function section(title, innerHtml) {
+  const div = document.createElement("div");
+  div.className = "row";
+  div.innerHTML = `<h3>${title}</h3>${innerHtml}`;
+  return div;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+boot();
+</script>
+</body>
+</html>
