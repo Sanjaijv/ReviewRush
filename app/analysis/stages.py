@@ -65,10 +65,23 @@ def build_custom_stages(repo_config: RepoConfig, settings: Settings) -> list[Sta
 
 def _semgrep_stage(settings: Settings) -> StageSpec:
     report_path = "/work/.semgrep-report.json"
-    command = (
+    # `--config=auto` fetches its ruleset from the Semgrep registry over the
+    # network (only relevant when analysis_semgrep_network_enabled=true - see
+    # that setting's docstring for the isolation tradeoff this implies), and
+    # a transient DNS/connection hiccup fetching it is not meaningfully
+    # different from the transient GitHub API failures app/github/client.py
+    # already retries - a few quick attempts here avoids treating one flaky
+    # resolver blip as a hard BLOCK.
+    scan_once = (
         f"semgrep scan --config=auto --json --output={report_path} "
-        f"--error --disable-version-check /work; "
-        f"code=$?; cat {report_path} 2>/dev/null; exit $code"
+        f"--error --disable-version-check /work"
+    )
+    command = (
+        f"code=1; "
+        f"for attempt in 1 2 3; do "
+        f"{scan_once} && code=0 && break; code=$?; sleep 2; "
+        f"done; "
+        f"cat {report_path} 2>/dev/null; exit $code"
     )
     return StageSpec(
         name="semgrep",
