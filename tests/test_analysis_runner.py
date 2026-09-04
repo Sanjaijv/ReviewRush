@@ -46,6 +46,26 @@ def test_build_args_applies_isolation_flags() -> None:
     assert "python:3.12-slim" in args
 
 
+def test_build_args_tmp_tmpfs_allows_exec() -> None:
+    """Regression test: HOME/TMPDIR point at /tmp, so a stage that pip
+    installs a tool (e.g. dependency_audit's pip-audit) lands the
+    executable there. Docker's --tmpfs defaults to noexec, which would
+    silently make that freshly-installed binary unrunnable ("Permission
+    denied") even though PATH and file permissions are correct.
+    """
+    runner = _runner()
+    args = runner._build_args(
+        image="python:3.12-slim",
+        command="pip install pip-audit && pip-audit",
+        run_subdir="abc123",
+        limits=_limits(),
+        env=None,
+        container_name="reviewrush-check-test",
+    )
+    tmp_mount = args[args.index("/tmp:rw,exec,size=256m,mode=1777")]
+    assert "exec" in tmp_mount.split(":")[1].split(",")
+
+
 def test_build_args_overrides_entrypoint_with_shell() -> None:
     """Regression test: some tool images (zricethezav/gitleaks) set
     ENTRYPOINT to the tool binary itself - without an explicit

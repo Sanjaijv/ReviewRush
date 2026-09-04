@@ -137,8 +137,13 @@ class DockerCliSandboxRunner:
             "--pids-limit",
             str(limits.pids_limit),
             "--read-only",
+            # exec is required here (unlike the scratch mount below): HOME
+            # and TMPDIR point at /tmp, so pip-installed tools (e.g.
+            # pip-audit for the dependency_audit stage) land their
+            # executables there - Docker's tmpfs defaults to noexec, which
+            # would silently block running anything just installed.
             "--tmpfs",
-            "/tmp:rw,size=256m,mode=1777",
+            "/tmp:rw,exec,size=256m,mode=1777",
             "--tmpfs",
             f"{scratch}:rw,size=1024m,mode=1777",
             "--cap-drop",
