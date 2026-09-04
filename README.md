@@ -226,6 +226,59 @@ AI_OLLAMA_BASE_URL=http://host.docker.internal:11434
 # AI_OLLAMA_BASE_URL=http://localhost:11434
 ```
 
+A hosted provider (Groq) is also supported for when local CPU-only inference
+is too slow - unlike Ollama, this sends diff/prompt content to a third-party
+service:
+
+```bash
+# .env
+AI_REVIEW_ENABLED=true
+AI_PROVIDER=groq
+AI_GROQ_API_KEY=gsk_...   # free key from console.groq.com/keys
+AI_MODEL=openai/gpt-oss-20b
+```
+
+## AI auto-fix
+
+For a low-severity, mechanical finding, the AI reviewer can go one step
+further than advising: it generates a fix, applies it to a fresh checkout,
+re-runs this repository's own deterministic checks against the result, and
+- only if every required check still passes - opens a **separate** pull
+request proposing the fix, targeting the original PR's own branch (merging
+the fix-PR updates the original PR; nothing is ever pushed directly to it,
+and nothing merges automatically).
+
+- `category="security"` findings are never eligible, and severity is capped
+  at `"low"` by default (`"medium"` at most) - both are enforced in code
+  (`app/autofix/service.py`), not just by configuration, so a config mistake
+  can never widen what auto-fix is allowed to touch.
+- Each fix is scoped to exactly one finding's own `start_line`..`end_line` in
+  one file (`app/autofix/schema.py`'s `FixSuggestion`) - there is no general
+  patch/diff-apply engine, so a fix that needs a wider change is a case the
+  model is instructed to decline (`applicable: false`) rather than force.
+- Every attempt - successful or not - is recorded immutably in
+  `AutoFixAttempt` (`status`: `pr_opened`, `verification_failed`,
+  `not_applicable`, `invalid_output`, or `error`) and in the audit log
+  (`app/dashboard/audit.py`), and is idempotent per finding: a rerun never
+  re-attempts (or re-pushes) a finding that already has an attempt row.
+
+### Enabling it
+
+Requires **both** a global switch and per-repository consent - either alone
+does nothing:
+
+```bash
+# .env
+AUTOFIX_ENABLED=true
+```
+
+```yaml
+# .reviewrush.yml
+auto_fix:
+  enabled: true
+  maximum_severity: low   # or "medium" - never higher
+```
+
 ## Repository-aware context (Phase 10)
 
 Before the AI reviewer (Phase 6) builds its prompt, it asks
