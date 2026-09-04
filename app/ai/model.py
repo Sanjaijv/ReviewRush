@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.ai.schema import AIReviewOutput
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -37,9 +36,18 @@ class ReviewModel(Protocol):
     `messages` is a multi-turn chat history so a repair request can append
     the prior (invalid) assistant reply plus a correction instruction,
     rather than the interface only supporting a single user turn.
+
+    `response_schema` is the caller's target JSON Schema (e.g.
+    `AIReviewOutput.model_json_schema()` for a review, or
+    `FixSuggestion.model_json_schema()` for an auto-fix suggestion) - the
+    caller decides the shape, never the provider. Every caller must pass one
+    explicitly; there is deliberately no default, so a new call site can
+    never silently inherit some other feature's schema.
     """
 
-    def generate(self, *, system: str, messages: list[dict[str, str]]) -> ModelResponse: ...
+    def generate(
+        self, *, system: str, messages: list[dict[str, str]], response_schema: dict[str, Any]
+    ) -> ModelResponse: ...
 
 
 class OllamaReviewModel:
@@ -55,12 +63,14 @@ class OllamaReviewModel:
         self._timeout_seconds = timeout_seconds
         self._max_output_tokens = max_output_tokens
 
-    def generate(self, *, system: str, messages: list[dict[str, str]]) -> ModelResponse:
+    def generate(
+        self, *, system: str, messages: list[dict[str, str]], response_schema: dict[str, Any]
+    ) -> ModelResponse:
         started = time.monotonic()
         payload = {
             "model": self._model,
             "messages": [{"role": "system", "content": system}, *messages],
-            "format": AIReviewOutput.model_json_schema(),
+            "format": response_schema,
             "stream": False,
             "options": {"num_predict": self._max_output_tokens},
         }
@@ -143,7 +153,9 @@ class GroqReviewModel:
         self._timeout_seconds = timeout_seconds
         self._max_output_tokens = max_output_tokens
 
-    def generate(self, *, system: str, messages: list[dict[str, str]]) -> ModelResponse:
+    def generate(
+        self, *, system: str, messages: list[dict[str, str]], response_schema: dict[str, Any]
+    ) -> ModelResponse:
         started = time.monotonic()
         # Unlike Ollama's structural "format" json-schema constraint, Groq's
         # json_object mode only guarantees syntactically valid JSON - it has
@@ -151,7 +163,7 @@ class GroqReviewModel:
         # out in the prompt text itself for the model to follow it.
         schema_system = (
             f"{system}\n\nThe JSON object you return MUST conform to this JSON "
-            f"Schema:\n{json.dumps(AIReviewOutput.model_json_schema())}"
+            f"Schema:\n{json.dumps(response_schema)}"
         )
         payload = {
             "model": self._model,

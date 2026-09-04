@@ -160,7 +160,11 @@ def _generate_suggestion(
     model: ReviewModel, system: str, user: str
 ) -> tuple[FixSuggestion | None, str | None]:
     try:
-        response = model.generate(system=system, messages=[{"role": "user", "content": user}])
+        response = model.generate(
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            response_schema=FixSuggestion.model_json_schema(),
+        )
     except Exception as exc:  # a provider bug must never crash the pipeline
         logger.exception("auto-fix model call raised unexpectedly")
         return None, str(exc)

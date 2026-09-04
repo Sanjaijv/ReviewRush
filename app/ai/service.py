@@ -181,7 +181,9 @@ def _persist(
 
 def _call_model(model: ReviewModel, system: str, messages: list[dict[str, str]]) -> ModelResponse:
     try:
-        return model.generate(system=system, messages=messages)
+        return model.generate(
+            system=system, messages=messages, response_schema=AIReviewOutput.model_json_schema()
+        )
     except Exception as exc:  # a provider bug must never crash the pipeline
         logger.exception("review model call raised unexpectedly")
         return ModelResponse(

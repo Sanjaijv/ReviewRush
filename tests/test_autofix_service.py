@@ -41,7 +41,7 @@ class _FakeModel:
         self._response = response
         self.calls: list[dict] = []
 
-    def generate(self, *, system, messages):
+    def generate(self, *, system, messages, response_schema=None):
         self.calls.append({"system": system, "messages": messages})
         return self._response
 

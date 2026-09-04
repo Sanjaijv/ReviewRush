@@ -14,7 +14,7 @@ class _FakeModel:
         self._responses = list(responses)
         self.calls = 0
 
-    def generate(self, *, system, messages):
+    def generate(self, *, system, messages, response_schema=None):
         self.calls += 1
         return self._responses.pop(0)
 
