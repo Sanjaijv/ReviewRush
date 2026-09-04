@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     ai_review_enabled: bool = Field(default=False)
     ai_provider: str = Field(default="ollama")
     ai_ollama_base_url: str = Field(default="http://localhost:11434")
+    ai_groq_api_key: str = Field(default="")
+    ai_groq_base_url: str = Field(default="https://api.groq.com/openai/v1")
     ai_model: str = Field(default="qwen2.5-coder:7b")
     ai_request_timeout_seconds: int = Field(default=120)
     ai_max_output_tokens: int = Field(default=4096)

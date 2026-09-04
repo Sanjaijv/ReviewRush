@@ -125,6 +125,105 @@ class OllamaReviewModel:
         )
 
 
+class GroqReviewModel:
+    """Calls Groq's OpenAI-compatible chat completions API. Groq hosts
+    open-weight models on custom inference hardware, so responses are
+    dramatically faster than local CPU-only inference - useful when the
+    reviewing host has no GPU. Requires an API key (free tier available at
+    console.groq.com); unlike Ollama this is a public third-party service,
+    so the diff/prompt content leaves the local network.
+    """
+
+    def __init__(
+        self, base_url: str, api_key: str, model: str, timeout_seconds: int, max_output_tokens: int
+    ):
+        self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._max_output_tokens = max_output_tokens
+
+    def generate(self, *, system: str, messages: list[dict[str, str]]) -> ModelResponse:
+        started = time.monotonic()
+        # Unlike Ollama's structural "format" json-schema constraint, Groq's
+        # json_object mode only guarantees syntactically valid JSON - it has
+        # no notion of the target field names, so the schema must be spelled
+        # out in the prompt text itself for the model to follow it.
+        schema_system = (
+            f"{system}\n\nThe JSON object you return MUST conform to this JSON "
+            f"Schema:\n{json.dumps(AIReviewOutput.model_json_schema())}"
+        )
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "system", "content": schema_system}, *messages],
+            "response_format": {"type": "json_object"},
+            "max_tokens": self._max_output_tokens,
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+
+        try:
+            with httpx.Client(base_url=self._base_url, timeout=self._timeout_seconds) as client:
+                response = client.post("/chat/completions", json=payload, headers=headers)
+                response.raise_for_status()
+                body = response.json()
+        except httpx.TimeoutException:
+            return ModelResponse(
+                content=None,
+                raw_text="",
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=int((time.monotonic() - started) * 1000),
+                error="groq request timed out",
+            )
+        except httpx.HTTPError as exc:
+            return ModelResponse(
+                content=None,
+                raw_text="",
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=int((time.monotonic() - started) * 1000),
+                error=f"groq request failed: {exc}",
+            )
+
+        latency_ms = int((time.monotonic() - started) * 1000)
+        choices = body.get("choices") or []
+        raw_text = ((choices[0].get("message") or {}).get("content")) if choices else ""
+        raw_text = raw_text or ""
+        usage = body.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+
+        try:
+            content = json.loads(raw_text)
+        except (json.JSONDecodeError, ValueError):
+            return ModelResponse(
+                content=None,
+                raw_text=raw_text,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                latency_ms=latency_ms,
+                error="model reply was not valid JSON",
+            )
+
+        if not isinstance(content, dict):
+            return ModelResponse(
+                content=None,
+                raw_text=raw_text,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                latency_ms=latency_ms,
+                error="model reply was not a JSON object",
+            )
+
+        return ModelResponse(
+            content=content,
+            raw_text=raw_text,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
+
+
 def build_review_model(
     settings: Settings, *, provider: str | None = None, model_name: str | None = None
 ) -> ReviewModel | None:
@@ -145,6 +244,17 @@ def build_review_model(
     if effective_provider == "ollama":
         return OllamaReviewModel(
             base_url=settings.ai_ollama_base_url,
+            model=effective_model,
+            timeout_seconds=settings.ai_request_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+        )
+    if effective_provider == "groq":
+        if not settings.ai_groq_api_key:
+            logger.error("groq provider configured without an API key")
+            return None
+        return GroqReviewModel(
+            base_url=settings.ai_groq_base_url,
+            api_key=settings.ai_groq_api_key,
             model=effective_model,
             timeout_seconds=settings.ai_request_timeout_seconds,
             max_output_tokens=settings.ai_max_output_tokens,
