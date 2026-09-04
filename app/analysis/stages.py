@@ -171,10 +171,18 @@ def _dependency_scan_stage(settings: Settings, workspace_host_path: Path) -> Sta
             category="dependency",
             required=settings.analysis_dependency_scan_required,
             image=settings.analysis_dependency_scan_python_image,
+            # pip-audit exits 1 to signal "vulnerabilities found", the same
+            # as a real execution failure - unlike most of this module's
+            # commands, there is deliberately no `|| <fallback>` here: an
+            # `||` would treat a legitimate scoped finding on
+            # requirements.txt the same as "the command didn't run" and
+            # silently substitute a whole-environment scan (including
+            # pip-audit's own dependencies) instead of reporting the
+            # repository's actual declared dependencies.
             command=(
+                "export PATH=\"$HOME/.local/bin:$PATH\"; "
                 "pip install --quiet --no-input pip-audit && "
-                "pip-audit --format=json -r requirements.txt 2>/dev/null || "
-                "pip-audit --format=json"
+                "pip-audit --format=json -r requirements.txt"
             ),
             limits=limits,
         )
