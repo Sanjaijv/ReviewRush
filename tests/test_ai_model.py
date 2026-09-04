@@ -32,7 +32,8 @@ def test_generate_returns_parsed_content_on_success(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
     response = _model().generate(
-        system="sys", messages=[{"role": "user", "content": "review this"}]
+        system="sys", messages=[{"role": "user", "content": "review this"}],
+        response_schema={},
     )
 
     assert response.error is None
@@ -49,7 +50,9 @@ def test_generate_sets_error_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
-    response = _model().generate(system="sys", messages=[{"role": "user", "content": "x"}])
+    response = _model().generate(
+        system="sys", messages=[{"role": "user", "content": "x"}], response_schema={}
+    )
 
     assert response.content is None
     assert response.error == "ollama request timed out"
@@ -61,7 +64,9 @@ def test_generate_sets_error_on_connection_failure(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
-    response = _model().generate(system="sys", messages=[{"role": "user", "content": "x"}])
+    response = _model().generate(
+        system="sys", messages=[{"role": "user", "content": "x"}], response_schema={}
+    )
 
     assert response.content is None
     assert response.error is not None
@@ -77,7 +82,9 @@ def test_generate_sets_error_on_malformed_json_body(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
-    response = _model().generate(system="sys", messages=[{"role": "user", "content": "x"}])
+    response = _model().generate(
+        system="sys", messages=[{"role": "user", "content": "x"}], response_schema={}
+    )
 
     assert response.content is None
     assert response.error == "model reply was not valid JSON"

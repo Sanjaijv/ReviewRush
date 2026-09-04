@@ -28,7 +28,7 @@ class _FakeModel:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def generate(self, *, system, messages):
+    def generate(self, *, system, messages, response_schema=None):
         self.calls.append({"system": system, "messages": messages})
         return ModelResponse(
             content=None, raw_text="", prompt_tokens=0, completion_tokens=0, latency_ms=0,

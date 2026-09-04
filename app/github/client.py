@@ -126,6 +126,59 @@ class GitHubClient:
             return None
         return response.json()["object"]["sha"]
 
+    def get_commit_tree_sha(self, owner: str, repo: str, commit_sha: str) -> str:
+        """Return the root tree SHA for a commit - the `base_tree` a new
+        blob's tree must build on top of.
+        """
+        response = self._write("GET", f"/repos/{owner}/{repo}/git/commits/{commit_sha}")
+        return response.json()["tree"]["sha"]
+
+    def create_blob(self, owner: str, repo: str, content: str) -> str:
+        """Create a Git blob for one file's full new content, returning its SHA."""
+        response = self._create(
+            "POST",
+            f"/repos/{owner}/{repo}/git/blobs",
+            json={"content": content, "encoding": "utf-8"},
+        )
+        return response.json()["sha"]
+
+    def create_tree(
+        self, owner: str, repo: str, base_tree: str, path: str, blob_sha: str
+    ) -> str:
+        """Create a new tree that's `base_tree` plus one file's content
+        replaced by `blob_sha` at `path`. Returns the new tree's SHA.
+        """
+        response = self._create(
+            "POST",
+            f"/repos/{owner}/{repo}/git/trees",
+            json={
+                "base_tree": base_tree,
+                "tree": [
+                    {"path": path, "mode": "100644", "type": "blob", "sha": blob_sha}
+                ],
+            },
+        )
+        return response.json()["sha"]
+
+    def create_commit(
+        self, owner: str, repo: str, message: str, tree: str, parent: str
+    ) -> str:
+        """Create a commit with a single parent, returning the new commit's SHA."""
+        response = self._create(
+            "POST",
+            f"/repos/{owner}/{repo}/git/commits",
+            json={"message": message, "tree": tree, "parents": [parent]},
+        )
+        return response.json()["sha"]
+
+    def create_ref(self, owner: str, repo: str, ref: str, sha: str) -> None:
+        """Create a new branch (`ref` like "refs/heads/my-branch") pointing at `sha`."""
+        self._create(
+            "POST",
+            f"/repos/{owner}/{repo}/git/refs",
+            json={"ref": ref, "sha": sha},
+        )
+
     def get_file_contents(self, owner: str, repo: str, path: str, ref: str) -> str | None:
         """Return decoded file content at a ref, or None if the file doesn't exist."""
         response = self._get(f"/repos/{owner}/{repo}/contents/{path}", params={"ref": ref})

@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     ai_max_prompt_bytes: int = Field(default=400_000)
     ai_max_issues: int = Field(default=50)
 
+    # AI auto-fix: global kill switch, off by default. A repo must also opt
+    # in via `.reviewrush.yml: auto_fix.enabled` - both layers are required,
+    # matching how auto-merge is gated (see app/repo_config.py:MergeConfig).
+    autofix_enabled: bool = Field(default=False)
+    autofix_max_fixes_per_snapshot: int = Field(default=3)
+    autofix_max_output_tokens: int = Field(default=2048)
+
     # Specialized reviewers and consensus (Phase 14). Off by default: the
     # single general-purpose reviewer (Phase 6) remains the AIReview record
     # every downstream consumer (policy engine, checks/comments) reads.
