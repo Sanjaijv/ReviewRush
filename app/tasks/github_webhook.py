@@ -33,66 +33,23 @@ def _mark_delivery(db: Any, delivery_id: str, status: str) -> None:
     db.commit()
 
 
-def _handle_installation(db: Any, payload: dict) -> None:
-    action = payload.get("action")
-    installation_payload = payload.get("installation") or {}
-    github_installation_id = installation_payload.get("id")
-    account = installation_payload.get("account") or {}
-
-    installation = (
-        db.query(Installation)
-        .filter_by(github_installation_id=github_installation_id)
-        .one_or_none()
-    )
-
-    if action == "deleted":
-        if installation is not None:
-            installation.status = "deleted"
-            repository_ids = []
-            for repository in installation.repositories:
-                repository.is_active = False
-                repository_ids.append(repository.id)
-            purge_repository_index(db, repository_ids)
-            db.commit()
-        return
-
-    if installation is None:
-        installation = Installation(
-            github_installation_id=github_installation_id,
-            account_login=account.get("login", ""),
-            account_type=account.get("type", ""),
-            status="active",
-        )
-        db.add(installation)
-        db.flush()
-        get_or_create_organization(db, installation)
-    else:
-        installation.account_login = account.get("login", installation.account_login)
-        installation.account_type = account.get("type", installation.account_type)
-        installation.status = "suspended" if action == "suspend" else "active"
-    db.commit()
-
-
-def _handle_installation_repositories(db: Any, payload: dict) -> None:
-    installation_payload = payload.get("installation") or {}
-    github_installation_id = installation_payload.get("id")
-
-    installation = (
-        db.query(Installation)
-        .filter_by(github_installation_id=github_installation_id)
-        .one_or_none()
-    )
-    if installation is None:
-        logger.warning(
-            "installation_repositories event for unknown installation",
-            extra={"github_installation_id": github_installation_id},
-        )
+def _add_repositories(db: Any, installation: Installation, repo_payloads: list[dict]) -> None:
+    """Upsert Repository rows for one installation from a list of GitHub
+    repository payloads (`{id, full_name, ...}`), applying the Phase 17 plan
+    repository-count limit. Shared by every event that can add repositories
+    to an installation - both `installation_repositories.added` and an
+    `installation` event's own `repositories` field (present when repos were
+    selected at install time, which is the *first* time an app sees them and
+    therefore the case that matters most for a repo actually getting
+    registered).
+    """
+    if not repo_payloads:
         return
 
     organization = get_or_create_organization(db, installation)
     limits = resolve_limits(organization)
 
-    for repo_payload in payload.get("repositories_added", []):
+    for repo_payload in repo_payloads:
         github_repo_id = repo_payload.get("id")
         repository = db.query(Repository).filter_by(github_repo_id=github_repo_id).one_or_none()
         full_name = repo_payload.get("full_name", "")
@@ -136,6 +93,82 @@ def _handle_installation_repositories(db: Any, payload: dict) -> None:
                 repository_id=repository.id,
                 metadata={"plan": organization.plan, "max_repositories": limits.max_repositories},
             )
+
+
+def _handle_installation(db: Any, payload: dict) -> None:
+    action = payload.get("action")
+    installation_payload = payload.get("installation") or {}
+    github_installation_id = installation_payload.get("id")
+    account = installation_payload.get("account") or {}
+
+    installation = (
+        db.query(Installation)
+        .filter_by(github_installation_id=github_installation_id)
+        .one_or_none()
+    )
+
+    if action == "deleted":
+        if installation is not None:
+            installation.status = "deleted"
+            repository_ids = []
+            for repository in installation.repositories:
+                repository.is_active = False
+                repository_ids.append(repository.id)
+            purge_repository_index(db, repository_ids)
+            db.commit()
+        return
+
+    is_new_installation = installation is None
+    if installation is None:
+        installation = Installation(
+            github_installation_id=github_installation_id,
+            account_login=account.get("login", ""),
+            account_type=account.get("type", ""),
+            status="active",
+        )
+        db.add(installation)
+        db.flush()
+        get_or_create_organization(db, installation)
+    else:
+        installation.account_login = account.get("login", installation.account_login)
+        installation.account_type = account.get("type", installation.account_type)
+        installation.status = "suspended" if action == "suspend" else "active"
+
+    if action == "created" and is_new_installation:
+        # The `repositories` field is only present when repository_selection
+        # is "selected" - GitHub omits it for "all" (an account could have
+        # thousands of repos) and expects the app to call the installation
+        # repositories API instead. Without this, a repo chosen at install
+        # time never gets a Repository row until it's later removed and
+        # re-added via the installation settings, which is the bug this
+        # branch fixes.
+        if installation_payload.get("repository_selection") == "all" and github_installation_id:
+            token = get_installation_access_token(github_installation_id)
+            with GitHubClient(token) as client:
+                _add_repositories(db, installation, client.list_installation_repositories())
+        else:
+            _add_repositories(db, installation, payload.get("repositories", []))
+
+    db.commit()
+
+
+def _handle_installation_repositories(db: Any, payload: dict) -> None:
+    installation_payload = payload.get("installation") or {}
+    github_installation_id = installation_payload.get("id")
+
+    installation = (
+        db.query(Installation)
+        .filter_by(github_installation_id=github_installation_id)
+        .one_or_none()
+    )
+    if installation is None:
+        logger.warning(
+            "installation_repositories event for unknown installation",
+            extra={"github_installation_id": github_installation_id},
+        )
+        return
+
+    _add_repositories(db, installation, payload.get("repositories_added", []))
 
     removed_repository_ids: list[int] = []
     for repo_payload in payload.get("repositories_removed", []):

@@ -143,6 +143,26 @@ class GitHubClient:
         response = self._write("GET", f"/repos/{owner}/{repo}/compare/{base}...{head}")
         return response.json()
 
+    def list_installation_repositories(self) -> list[dict]:
+        """List every repository this installation currently has access to.
+
+        Needed because the `installation` webhook's `created` payload only
+        includes a `repositories` array when `repository_selection` is
+        `"selected"` - when it's `"all"`, GitHub omits it (an account could
+        have thousands of repos) and expects the app to call this endpoint
+        instead. Paginated the same way `fetch_accessible_installation_ids`
+        (app/dashboard/oauth.py) pages `/user/installations`.
+        """
+        repositories: list[dict] = []
+        url: str | None = "/installation/repositories"
+        params: dict[str, int] = {"per_page": 100}
+        while url:
+            response = self._write("GET", url, params=params)
+            repositories.extend(response.json().get("repositories", []))
+            url = response.links.get("next", {}).get("url")
+            params = {}
+        return repositories
+
     def list_open_pull_requests(
         self, owner: str, repo: str, head: str, base: str
     ) -> list[dict]:
