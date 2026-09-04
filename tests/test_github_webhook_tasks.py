@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import text
@@ -46,6 +47,75 @@ def test_installation_created_upserts_installation(db_session) -> None:
 
     delivery = db_session.query(WebhookDelivery).filter_by(delivery_id=delivery_id).one()
     assert delivery.status == "processed"
+
+
+def test_installation_created_with_selected_repos_registers_them(db_session) -> None:
+    """Regression test: a repository chosen during the install flow (not
+    added later via the installation settings) arrives in the `installation`
+    event's own `repositories` field when repository_selection is
+    "selected" - this must register a Repository row immediately, not only
+    on a later `installation_repositories` event.
+    """
+    delivery_id = _delivery_id()
+    db_session.add(WebhookDelivery(delivery_id=delivery_id, event_type="installation"))
+    db_session.commit()
+
+    payload = {
+        "action": "created",
+        "installation": {
+            "id": 3001,
+            "account": {"login": "acme", "type": "User"},
+            "repository_selection": "selected",
+        },
+        "repositories": [{"id": 7001, "full_name": "acme/widgets"}],
+    }
+
+    process_github_webhook.run(delivery_id=delivery_id, event_type="installation", payload=payload)
+
+    repo = db_session.query(Repository).filter_by(github_repo_id=7001).one()
+    assert repo.full_name == "acme/widgets"
+    assert repo.is_active is True
+
+
+def test_installation_created_with_all_repos_fetches_via_api(db_session) -> None:
+    """Regression test: when repository_selection is "all", GitHub omits
+    `repositories` from the payload entirely - the app must call the
+    installation repositories API to enumerate them instead of silently
+    registering nothing.
+    """
+    delivery_id = _delivery_id()
+    db_session.add(WebhookDelivery(delivery_id=delivery_id, event_type="installation"))
+    db_session.commit()
+
+    payload = {
+        "action": "created",
+        "installation": {
+            "id": 3002,
+            "account": {"login": "acme", "type": "Organization"},
+            "repository_selection": "all",
+        },
+    }
+
+    mock_client = MagicMock()
+    mock_client.__enter__.return_value = mock_client
+    mock_client.__exit__.return_value = False
+    mock_client.list_installation_repositories.return_value = [
+        {"id": 7002, "full_name": "acme/gizmos"}
+    ]
+
+    with (
+        patch(
+            "app.tasks.github_webhook.get_installation_access_token", return_value="fake-token"
+        ),
+        patch("app.tasks.github_webhook.GitHubClient", return_value=mock_client),
+    ):
+        process_github_webhook.run(
+            delivery_id=delivery_id, event_type="installation", payload=payload
+        )
+
+    repo = db_session.query(Repository).filter_by(github_repo_id=7002).one()
+    assert repo.full_name == "acme/gizmos"
+    assert repo.is_active is True
 
 
 def test_installation_deleted_deactivates_repositories(db_session) -> None:

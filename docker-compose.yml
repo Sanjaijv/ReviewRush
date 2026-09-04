@@ -57,6 +57,14 @@ services:
       REDIS_URL: redis://redis:6379/0
       ANALYSIS_WORKDIR: /var/lib/reviewrush/analysis
       ANALYSIS_VOLUME_NAME: reviewrush_analysis_workspace
+    # Lets the worker container reach a host-run Ollama server via
+    # http://host.docker.internal:11434 (set AI_OLLAMA_BASE_URL/
+    # CONTEXT_EMBEDDINGS to that, not localhost - localhost inside this
+    # container means the container itself, not the host). Docker Desktop
+    # provides this mapping automatically; on Linux Docker Engine it must be
+    # requested explicitly, which is what this does.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

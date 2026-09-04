@@ -46,6 +46,29 @@ def test_build_args_applies_isolation_flags() -> None:
     assert "python:3.12-slim" in args
 
 
+def test_build_args_overrides_entrypoint_with_shell() -> None:
+    """Regression test: some tool images (zricethezav/gitleaks) set
+    ENTRYPOINT to the tool binary itself - without an explicit
+    `--entrypoint sh` override, "sh -c <script>" gets appended as CMD and
+    the tool tries (and fails) to parse "sh" as its own subcommand instead
+    of a shell actually running.
+    """
+    runner = _runner()
+    args = runner._build_args(
+        image="zricethezav/gitleaks:latest",
+        command="gitleaks detect",
+        run_subdir="abc123",
+        limits=_limits(),
+        env=None,
+        container_name="reviewrush-check-test",
+    )
+    assert "--entrypoint" in args
+    assert args[args.index("--entrypoint") + 1] == "sh"
+    image_index = args.index("zricethezav/gitleaks:latest")
+    assert args[image_index + 1] == "-c"
+    assert "gitleaks detect" in args[image_index + 2]
+
+
 def test_build_args_network_enabled_uses_bridge() -> None:
     runner = _runner()
     args = runner._build_args(
