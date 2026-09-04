@@ -158,7 +158,12 @@ class DockerCliSandboxRunner:
         ]
         for key, value in (env or {}).items():
             args.extend(["-e", f"{key}={value}"])
-        args.extend([image, "sh", "-c", inner_script])
+        # Explicit --entrypoint override: some tool images (e.g.
+        # zricethezav/gitleaks) set ENTRYPOINT to the tool binary itself, so
+        # appending "sh -c <script>" as CMD without this would run
+        # "<binary> sh -c <script>" - the tool trying (and failing) to parse
+        # "sh" as its own subcommand, rather than actually invoking a shell.
+        args.extend(["--entrypoint", "sh", image, "-c", inner_script])
         return args
 
     def run(
