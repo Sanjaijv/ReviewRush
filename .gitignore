@@ -7,3 +7,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .DS_Store
+# Local throwaway clone used for manually testing the GitHub App end-to-end
+# (see README "How to run and verify" walkthrough) - has its own .git, never
+# part of this repo's history.
+/reviewrush-test/

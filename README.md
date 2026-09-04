@@ -218,8 +218,12 @@ ollama serve
 
 # .env
 AI_REVIEW_ENABLED=true
-AI_OLLAMA_BASE_URL=http://localhost:11434   # reachable from the Celery worker
 AI_MODEL=qwen2.5-coder:7b
+# Running via `docker compose up` (the worker runs in a container, so
+# `localhost` there means the container, not your host):
+AI_OLLAMA_BASE_URL=http://host.docker.internal:11434
+# Running the worker directly on the host instead (`celery -A app.celery_app.celery_app worker`):
+# AI_OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ## Repository-aware context (Phase 10)
