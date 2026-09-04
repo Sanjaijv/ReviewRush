@@ -6,6 +6,7 @@ from app.checks.service import run_github_checks_for_snapshot
 from app.db import SessionLocal
 from app.models import DiffSnapshot, Repository
 from app.tasks._reliability import handle_task_failure
+from app.tasks.autofix import run_auto_fix_task
 from app.tasks.merge import attempt_auto_merge_task
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,10 @@ def run_github_checks_task(self: Any, repository_id: int, diff_snapshot_id: int)
         # check run GitHub sees when computing mergeable_state already
         # reflects this snapshot's own completed conclusion.
         attempt_auto_merge_task.delay(repository_id, diff_snapshot_id)
+        # Auto-fix runs independently of the merge attempt - a fix-PR is
+        # useful regardless of whether this PR itself is eligible to merge,
+        # and it must never block or be blocked by that decision.
+        run_auto_fix_task.delay(repository_id, diff_snapshot_id)
         return "completed"
     except Exception as exc:
         logger.exception(

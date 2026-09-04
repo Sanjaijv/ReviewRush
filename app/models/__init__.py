@@ -1,6 +1,7 @@
 from app.db import Base
 from app.models.ai_review import AIFinding, AIReview
 from app.models.analysis import ToolRun
+from app.models.autofix import AutoFixAttempt
 from app.models.checks import ReviewComment
 from app.models.context import RepoContextSnapshot, RepoFileIndex, RepoSymbolChunk
 from app.models.dashboard import AuditEvent, RepositoryConfigVersion
@@ -25,6 +26,7 @@ __all__ = [
     "AIFinding",
     "AIReview",
     "AuditEvent",
+    "AutoFixAttempt",
     "Base",
     "BenchmarkCase",
     "ChangedFile",

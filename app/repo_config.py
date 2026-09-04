@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -39,6 +40,24 @@ class MergeConfig(BaseModel):
     require_human_for_protected_paths: bool = True
 
 
+class AutoFixConfig(BaseModel):
+    """Repo-level consent for AI auto-fix PRs (off by default). This is one
+    of two required layers - `settings.autofix_enabled` (an operator-level
+    global kill switch) must also be true, or nothing here takes effect.
+    `maximum_severity` can only ever be raised as high as "medium": findings
+    tagged "security" are never eligible regardless of this config, and
+    "high"/"critical" is not an accepted value here - both are enforced in
+    app/autofix/service.py, not just by this schema, so a config typo or a
+    future looser default here can never on its own widen what auto-fix is
+    allowed to touch.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = False
+    maximum_severity: Literal["low", "medium"] = "low"
+
+
 class RepoConfig(BaseModel):
     """Schema for `.reviewrush.yml`.
 
@@ -54,6 +73,7 @@ class RepoConfig(BaseModel):
     protected_paths: list[str] = Field(default_factory=list)
     checks: dict[str, CheckConfig] = Field(default_factory=dict)
     merge: MergeConfig = Field(default_factory=MergeConfig)
+    auto_fix: AutoFixConfig = Field(default_factory=AutoFixConfig)
 
 
 def parse_repo_config(raw_yaml: str | None) -> RepoConfig:
