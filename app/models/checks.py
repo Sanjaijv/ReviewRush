@@ -49,7 +49,13 @@ class ReviewComment(Base):
     github_node_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     line: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(16), default="posted")  # "posted" | "outdated"
+    # "posted" | "outdated" | "resolved" - "resolved" is set only by a
+    # successful or terminally-failed manual-fix outcome
+    # (app.autofix.service._update_manual_fix_comment), so
+    # _mark_stale_comments_outdated's status="posted" sweep never
+    # overwrites that comment's "Applied"/"Fix attempt failed" text with
+    # the generic outdated marker on a later push.
+    status: Mapped[str] = mapped_column(String(16), default="posted")
     head_sha: Mapped[str] = mapped_column(String(40))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

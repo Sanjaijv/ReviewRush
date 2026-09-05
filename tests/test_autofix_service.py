@@ -419,6 +419,9 @@ def test_apply_manual_fix_commits_directly_to_branch_when_verification_passes(
     assert len(fake_client.updated_comments) == 1
     _, updated_body = fake_client.updated_comments[0]
     assert "Applied" in updated_body
+    # Terminal: a later push's outdated-comment sweep must never clobber
+    # this "Applied" text - only a status="posted" row is eligible for that.
+    assert review_comment.status == "resolved"
 
 
 def test_apply_manual_fix_refuses_when_target_file_changed_since_review(
@@ -447,6 +450,7 @@ def test_apply_manual_fix_refuses_when_target_file_changed_since_review(
     push_calls = [c[0] for c in fake_client.calls]
     assert "update_branch_ref" not in push_calls
     assert "create_commit" not in push_calls
+    assert review_comment.status == "resolved"
 
     assert len(fake_client.updated_comments) == 1
     _, updated_body = fake_client.updated_comments[0]

@@ -317,6 +317,14 @@ human pushing the same commit would.
   building/check-run/analysis-queueing logic the push handler itself uses).
   Without this, the branch's required check would keep pointing at the
   pre-fix commit.
+- The checkbox comment's `ReviewComment` row is marked `status="resolved"`
+  once a terminal outcome ("Applied" or "Fix attempt failed") is recorded,
+  so `app.checks.service._mark_stale_comments_outdated`'s `status="posted"`
+  sweep - which the fix's own triggered re-review runs, since the finding
+  it just resolved is genuinely gone from the fresh diff - never
+  overwrites that text with the generic outdated marker. Confirmed live:
+  without this, the very re-review a successful fix triggers immediately
+  clobbered its own "Applied" comment.
 
 ### Enabling it
 

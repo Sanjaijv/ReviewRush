@@ -316,6 +316,51 @@ def test_outdated_inline_comment_is_edited_and_minimized() -> None:
     assert stale_inline.status == "outdated"
 
 
+def test_resolved_manual_fix_comment_is_never_touched_by_the_outdated_sweep() -> None:
+    """A comment app.autofix.service._update_manual_fix_comment already
+    marked status="resolved" (a terminal manual-fix outcome, "Applied" or
+    "Fix attempt failed") must never be picked up here even though its
+    finding is gone from the current diff - confirmed live: without this,
+    the very re-review a successful manual fix triggers immediately
+    overwrote its own "Applied" text with the generic outdated marker.
+    """
+    decision = PolicyDecision(
+        id=1, repository_id=1, diff_snapshot_id=1, decision="APPROVE", risk="LOW", reasons=["ok"]
+    )
+    ai_review = AIReview(id=1, repository_id=1, diff_snapshot_id=1, status="completed", summary="s")
+    ai_review.findings = []  # the finding this manual fix resolved is gone now
+    pull_request = PullRequest(
+        id=1, repository_id=1, github_pr_number=9, head_branch="foundations", base_branch="main"
+    )
+    resolved_inline = ReviewComment(
+        id=2,
+        repository_id=1,
+        pull_request_id=1,
+        diff_snapshot_id=0,
+        kind="inline",
+        fingerprint="old-fp",
+        github_comment_id=42,
+        github_node_id="PRRC_kwabc123",
+        status="resolved",
+        head_sha="sha0",
+    )
+    db = _make_db(
+        decision=decision,
+        ai_review=ai_review,
+        tool_runs=[],
+        pull_request=pull_request,
+        existing_comments={("inline", "old-fp"): resolved_inline},
+    )
+    client = _github_client()
+
+    with _patched(), patch("app.checks.service.GitHubClient", return_value=client):
+        run_github_checks_for_snapshot(db, _repository(), _snapshot(github_check_run_id=999))
+
+    client.update_review_comment.assert_not_called()
+    client.minimize_comment.assert_not_called()
+    assert resolved_inline.status == "resolved"
+
+
 def test_outdated_inline_comment_without_node_id_is_edited_but_not_minimized() -> None:
     """Rows created before the github_node_id column existed have no node id
     to minimize - they still fall back to the pre-existing edit-only

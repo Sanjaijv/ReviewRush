@@ -464,6 +464,7 @@ def _close_superseded_fix_prs(
 
 
 def _update_manual_fix_comment(
+    db: Any,
     client: GitHubClient,
     repository: Repository,
     review_comment: ReviewComment | None,
@@ -479,26 +480,39 @@ def _update_manual_fix_comment(
     comment's body, so this must be threaded through from the webhook
     rather than looked up again here.
 
+    Also marks the `ReviewComment` row `status="resolved"` - a manual-fix
+    outcome is terminal (see `AutoFixAttempt`'s docstring), so this comment
+    must never again be picked up by `app.checks.service.
+    _mark_stale_comments_outdated`'s `status="posted"` sweep on a later
+    push. Without this, the very re-review this fix commit itself triggers
+    (`app.tasks.review_trigger.trigger_review_for_commit`) finds the
+    now-resolved finding gone from the fresh diff and overwrites this
+    comment's "Applied"/"Fix attempt failed" text with the generic outdated
+    marker - confirmed live, immediately after landing this feature.
+
     Never allowed to change the AutoFixAttempt outcome this function is
     reporting - a failure here (including `current_body` being unavailable)
     is logged and swallowed, not raised, exactly like every other
     GitHub-side side effect in this module.
     """
-    if review_comment is None or current_body is None:
+    if review_comment is None:
         return
-    try:
-        client.update_review_comment(
-            repository.owner, repository.name, review_comment.github_comment_id,
-            render(current_body),
-        )
-    except Exception:
-        logger.exception(
-            "failed to update manual-fix checkbox comment",
-            extra={
-                "repository": repository.full_name,
-                "comment_id": review_comment.github_comment_id,
-            },
-        )
+    if current_body is not None:
+        try:
+            client.update_review_comment(
+                repository.owner, repository.name, review_comment.github_comment_id,
+                render(current_body),
+            )
+        except Exception:
+            logger.exception(
+                "failed to update manual-fix checkbox comment",
+                extra={
+                    "repository": repository.full_name,
+                    "comment_id": review_comment.github_comment_id,
+                },
+            )
+    review_comment.status = "resolved"
+    db.commit()
 
 
 def apply_manual_fix(
@@ -533,7 +547,9 @@ def apply_manual_fix(
         return existing
 
     def _report(render: Callable[[str], str]) -> None:
-        _update_manual_fix_comment(client, repository, review_comment, current_comment_body, render)
+        _update_manual_fix_comment(
+            db, client, repository, review_comment, current_comment_body, render
+        )
 
     pull_request = _find_pull_request(db, repository, diff_snapshot)
     if pull_request is None:
