@@ -1,7 +1,4 @@
-from pathlib import Path
-
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.metrics import router as metrics_router
 from app.api.v1.router import api_router
@@ -22,9 +19,7 @@ app.include_router(api_router)
 app.include_router(metrics_router)
 instrument_fastapi_app(app, settings)
 
-# Minimal, dependency-free dashboard UI (Phase 12) - a thin client over the
-# JSON API in app/api/v1/dashboard.py. No build step: served as-is.
-_dashboard_static_dir = Path(__file__).parent / "static" / "dashboard"
-app.mount(
-    "/dashboard", StaticFiles(directory=_dashboard_static_dir, html=True), name="dashboard"
-)
+# The dashboard UI (Phase 12) is now the Next.js app in frontend/, served as
+# its own process/origin and proxying /api/* back here (see
+# frontend/next.config.ts) - this service no longer serves any dashboard
+# HTML itself. See docs/frontend.md.

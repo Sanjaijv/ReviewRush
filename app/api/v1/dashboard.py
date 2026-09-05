@@ -144,7 +144,11 @@ def callback(
 
     redirect = Response(
         status_code=status.HTTP_302_FOUND,
-        headers={"Location": f"{settings.dashboard_base_url.rstrip('/')}/dashboard/"},
+        # The Next.js frontend (frontend/) now owns the whole dashboard
+        # origin at "/", proxying /api/* back to this service - there is no
+        # separate "/dashboard/" path to redirect into anymore (that was the
+        # old static-HTML dashboard's mount point in app/main.py).
+        headers={"Location": f"{settings.dashboard_base_url.rstrip('/')}/"},
     )
     redirect.delete_cookie(STATE_COOKIE_NAME)
     redirect.set_cookie(

@@ -22,12 +22,34 @@ docker compose up --build
 - Liveness: http://localhost:8010/api/v1/health/live
 - Readiness (checks DB + Redis): http://localhost:8010/api/v1/health/ready
 - GitHub webhook: http://localhost:8010/api/v1/github/webhook (`POST`, signed)
+- Dashboard (Next.js frontend, see below): http://localhost:3010
 
 Apply database migrations (from the host, with the stack running):
 
 ```bash
 docker compose exec api alembic upgrade head
 ```
+
+## Dashboard frontend
+
+The dashboard UI (Phase 12) is a separate Next.js app in [frontend/](frontend/), its
+own process/origin from the API. It proxies `/api/*` requests back to the FastAPI
+service (`frontend/next.config.ts`'s `rewrites()`) so the browser only ever talks to
+one origin and the existing GitHub-OAuth session cookie just works - no separate
+frontend auth or BFF layer.
+
+`docker compose up --build` (above) builds and runs it automatically as the
+`frontend` service, at http://localhost:3010. To run it directly on the host instead:
+
+```bash
+cd frontend
+cp .env.example .env.local   # BACKEND_ORIGIN, defaults to http://localhost:8010
+npm install
+npm run dev -- -p 3010
+```
+
+Either way, set `DASHBOARD_BASE_URL` (root `.env`) to wherever the frontend is
+actually served from - it's where the OAuth callback redirects after login.
 
 ## Run without Docker
 
