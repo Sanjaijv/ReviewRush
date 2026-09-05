@@ -195,6 +195,13 @@ class _FakeGitHubClient:
         self.calls.append(("update_review_comment", owner, repo, comment_id, body))
         self.updated_comments.append((comment_id, body))
 
+    def update_pull_request(self, owner, repo, number, title=None, body=None, state=None):
+        self.calls.append(("update_pull_request", owner, repo, number, state))
+
+    def create_issue_comment(self, owner, repo, issue_number, body):
+        self.calls.append(("create_issue_comment", owner, repo, issue_number, body))
+        return {"id": 1}
+
 
 def _response(content) -> ModelResponse:
     return ModelResponse(
@@ -472,3 +479,89 @@ def test_apply_manual_fix_is_one_shot_and_does_not_retry_an_existing_attempt(
     assert attempt.status == "error"
     assert fake_client.calls == []
     assert model.calls == []
+
+
+def test_attempt_fix_closes_superseded_older_fix_prs_for_same_line_range(
+    db_session, tmp_path
+) -> None:
+    repository, snapshot, first_finding = _setup(db_session)
+    # An earlier push's still-open fix-PR for the exact same line range.
+    old_attempt = AutoFixAttempt(
+        repository_id=repository.id, diff_snapshot_id=snapshot.id,
+        ai_finding_id=first_finding.id, trigger="automatic", status="pr_opened",
+        branch_name="reviewrush-fix/old", pull_request_number=42,
+        pull_request_url="https://github.com/acme/widgets/pull/42",
+    )
+    db_session.add(old_attempt)
+    db_session.commit()
+
+    # A later push's AIFinding at the exact same (category, file,
+    # start_line, end_line) but a differently-worded title - the model
+    # doesn't reword identically between runs for the same real issue.
+    ai_review = db_session.query(AIReview).filter_by(diff_snapshot_id=snapshot.id).one()
+    new_finding = AIFinding(
+        repository_id=repository.id, file=first_finding.file,
+        start_line=first_finding.start_line, end_line=first_finding.end_line,
+        severity=first_finding.severity, category=first_finding.category,
+        title="Reworded duplicate finding title", evidence="evidence text",
+    )
+    ai_review.findings.append(new_finding)
+    db_session.commit()
+
+    fake_client = _FakeGitHubClient()
+    model = _FakeModel(
+        _response({"applicable": True, "replacement_lines": ["fixed line"], "explanation": "why"})
+    )
+
+    with patch("app.autofix.service.workspace_for", _fake_workspace(tmp_path)), \
+         patch("app.autofix.service.build_review_model", return_value=model), \
+         patch("app.autofix.service._verify_fix", return_value=None):
+        attempt = attempt_fix(
+            db_session, fake_client, repository, snapshot, new_finding, _config(), Settings()
+        )
+
+    assert attempt.status == "pr_opened"
+    close_calls = [c for c in fake_client.calls if c[0] == "update_pull_request"]
+    assert close_calls == [("update_pull_request", "acme", "widgets", 42, "closed")]
+    comment_calls = [c for c in fake_client.calls if c[0] == "create_issue_comment"]
+    assert len(comment_calls) == 1
+    assert comment_calls[0][3] == 42
+    assert str(attempt.pull_request_number) in comment_calls[0][4]
+
+
+def test_attempt_fix_does_not_close_prs_for_a_different_line_range(db_session, tmp_path) -> None:
+    repository, snapshot, first_finding = _setup(db_session)
+    old_attempt = AutoFixAttempt(
+        repository_id=repository.id, diff_snapshot_id=snapshot.id,
+        ai_finding_id=first_finding.id, trigger="automatic", status="pr_opened",
+        branch_name="reviewrush-fix/old", pull_request_number=42,
+        pull_request_url="https://github.com/acme/widgets/pull/42",
+    )
+    db_session.add(old_attempt)
+    db_session.commit()
+
+    ai_review = db_session.query(AIReview).filter_by(diff_snapshot_id=snapshot.id).one()
+    unrelated_finding = AIFinding(
+        repository_id=repository.id, file=first_finding.file,
+        start_line=first_finding.start_line + 5, end_line=first_finding.end_line + 5,
+        severity=first_finding.severity, category=first_finding.category,
+        title="A different issue entirely", evidence="evidence text",
+    )
+    ai_review.findings.append(unrelated_finding)
+    db_session.commit()
+
+    fake_client = _FakeGitHubClient()
+    model = _FakeModel(
+        _response({"applicable": True, "replacement_lines": ["fixed line"], "explanation": "why"})
+    )
+
+    with patch("app.autofix.service.workspace_for", _fake_workspace(tmp_path)), \
+         patch("app.autofix.service.build_review_model", return_value=model), \
+         patch("app.autofix.service._verify_fix", return_value=None):
+        attempt = attempt_fix(
+            db_session, fake_client, repository, snapshot, unrelated_finding, _config(), Settings()
+        )
+
+    assert attempt.status == "pr_opened"
+    assert [c for c in fake_client.calls if c[0] == "update_pull_request"] == []
+    assert [c for c in fake_client.calls if c[0] == "create_issue_comment"] == []

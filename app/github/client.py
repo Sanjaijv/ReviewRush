@@ -279,13 +279,26 @@ class GitHubClient:
                     fh.write(chunk)
 
     def update_pull_request(
-        self, owner: str, repo: str, number: int, title: str | None = None, body: str | None = None
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        title: str | None = None,
+        body: str | None = None,
+        state: str | None = None,
     ) -> dict:
+        """`state` accepts GitHub's own values ("open"/"closed"). GitHub
+        rejects this on an already-merged PR (422) rather than doing
+        anything destructive - closing one that's already closed, or an
+        already-open one, is a harmless no-op either way.
+        """
         payload: dict[str, str] = {}
         if title is not None:
             payload["title"] = title
         if body is not None:
             payload["body"] = body
+        if state is not None:
+            payload["state"] = state
         response = self._write("PATCH", f"/repos/{owner}/{repo}/pulls/{number}", json=payload)
         return response.json()
 

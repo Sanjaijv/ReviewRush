@@ -368,11 +368,94 @@ def attempt_fix(
                 status="error", error_message=str(exc),
             )
 
-        return _persist_attempt(
+        attempt = _persist_attempt(
             db, repository=repository, diff_snapshot=diff_snapshot, finding=finding,
             status="pr_opened", branch_name=branch_name,
             pull_request_number=created.get("number"), pull_request_url=created.get("html_url"),
         )
+        _close_superseded_fix_prs(db, client, repository, finding, attempt)
+        return attempt
+
+
+def _find_superseded_fix_attempts(
+    db: Any, repository: Repository, finding: AIFinding, current_attempt_id: int
+) -> list[AutoFixAttempt]:
+    """Prior *automatic* fix-PRs for the same underlying one-line-range
+    issue as `finding` - identified by (category, file, start_line,
+    end_line), not `app.checks.fingerprint.finding_fingerprint`, because
+    that also hashes the finding's `title`, and the model rewords titles
+    slightly between review runs even for the identical issue. A finding
+    that was never actually fixed on the target branch (the fix-PR sat
+    unmerged) gets re-detected as a "new" AIFinding on every later push
+    that still contains it, otherwise piling up one redundant fix-PR per
+    push forever.
+    """
+    return (
+        db.query(AutoFixAttempt)
+        .join(AIFinding, AutoFixAttempt.ai_finding_id == AIFinding.id)
+        .filter(
+            AutoFixAttempt.repository_id == repository.id,
+            AutoFixAttempt.status == "pr_opened",
+            AutoFixAttempt.trigger == "automatic",
+            AutoFixAttempt.id != current_attempt_id,
+            AutoFixAttempt.pull_request_number.is_not(None),
+            AIFinding.category == finding.category,
+            AIFinding.file == finding.file,
+            AIFinding.start_line == finding.start_line,
+            AIFinding.end_line == finding.end_line,
+        )
+        .all()
+    )
+
+
+def _close_superseded_fix_prs(
+    db: Any,
+    client: GitHubClient,
+    repository: Repository,
+    finding: AIFinding,
+    new_attempt: AutoFixAttempt,
+) -> None:
+    """Best-effort: close every earlier still-open fix-PR for the same
+    underlying issue `new_attempt` was just opened for, with an explanatory
+    comment. Never allowed to affect `new_attempt`'s own outcome - a
+    failure closing one old PR is logged and skipped, not raised.
+    """
+    superseded = _find_superseded_fix_attempts(db, repository, finding, new_attempt.id)
+    for old in superseded:
+        if old.pull_request_number is None:
+            continue
+        try:
+            client.update_pull_request(
+                repository.owner, repository.name, old.pull_request_number, state="closed"
+            )
+            client.create_issue_comment(
+                repository.owner,
+                repository.name,
+                old.pull_request_number,
+                f"Superseded by #{new_attempt.pull_request_number}, which fixes the same "
+                "underlying finding against more current code - closing this one "
+                "automatically rather than leaving a stale duplicate open.",
+            )
+        except Exception:
+            logger.exception(
+                "failed to close superseded auto-fix PR",
+                extra={
+                    "repository": repository.full_name,
+                    "old_pr_number": old.pull_request_number,
+                    "new_pr_number": new_attempt.pull_request_number,
+                },
+            )
+            continue
+        record_audit_event(
+            db,
+            action="auto_fix_pr_superseded",
+            target_type="pull_request",
+            target_id=str(old.pull_request_number),
+            repository_id=repository.id,
+            metadata={"superseded_by": new_attempt.pull_request_number, "old_attempt_id": old.id},
+        )
+    if superseded:
+        db.commit()
 
 
 def _update_manual_fix_comment(

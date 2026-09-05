@@ -261,6 +261,15 @@ and nothing merges automatically).
   `not_applicable`, `invalid_output`, or `error`) and in the audit log
   (`app/dashboard/audit.py`), and is idempotent per finding: a rerun never
   re-attempts (or re-pushes) a finding that already has an attempt row.
+- A finding left unmerged on its fix-PR is reported again as a "new"
+  AIFinding on every later push that still contains it (each review run
+  assigns fresh row ids, and the model rewords titles slightly between
+  runs), which used to pile up one redundant fix-PR per push forever. When
+  a new automatic fix-PR opens, `_close_superseded_fix_prs` closes every
+  earlier still-open fix-PR for the exact same `(category, file,
+  start_line, end_line)` - the same underlying one-line-range issue -
+  with a comment pointing at the new one, so there's only ever one open
+  fix-PR per unresolved finding.
 
 ### On-demand fixes for findings automatic auto-fix skips
 
