@@ -179,6 +179,22 @@ class GitHubClient:
             json={"ref": ref, "sha": sha},
         )
 
+    def update_branch_ref(self, owner: str, repo: str, branch: str, sha: str) -> dict:
+        """Fast-forward an existing branch to `sha`. Never passes GitHub's
+        `force` flag - a non-fast-forward update (the branch moved to a
+        commit not reachable from `sha`'s history since the caller last
+        looked) is rejected by GitHub (422) and raised, not overwritten. A
+        manual on-demand fix (`app.autofix.service.apply_manual_fix`) relies
+        on this: it must never silently discard a commit a human pushed to
+        the branch while the fix was being generated/verified.
+        """
+        response = self._write(
+            "PATCH",
+            f"/repos/{owner}/{repo}/git/refs/heads/{branch}",
+            json={"sha": sha},
+        )
+        return response.json()
+
     def get_file_contents(self, owner: str, repo: str, path: str, ref: str) -> str | None:
         """Return decoded file content at a ref, or None if the file doesn't exist."""
         response = self._get(f"/repos/{owner}/{repo}/contents/{path}", params={"ref": ref})

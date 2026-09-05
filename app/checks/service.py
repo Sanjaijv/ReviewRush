@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
+from app.autofix.service import manual_fix_eligible
 from app.checks.fingerprint import SUMMARY_FINGERPRINT, finding_fingerprint, meets_inline_threshold
 from app.checks.rendering import (
     check_conclusion,
@@ -25,7 +26,7 @@ from app.models import (
     ReviewComment,
     ToolRun,
 )
-from app.repo_config import parse_repo_config
+from app.repo_config import RepoConfig, parse_repo_config
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,7 @@ def _post_inline_comments(
     diff_snapshot: DiffSnapshot,
     findings: list[AIFinding],
     settings: Any,
+    repo_config: RepoConfig,
 ) -> set[int]:
     """Post inline comments for eligible findings, capped and thresholded to
     keep noise down. Returns the ids of findings that got an inline comment
@@ -260,7 +262,10 @@ def _post_inline_comments(
                 commit_id=diff_snapshot.head_sha,
                 path=finding.file,
                 position=position,
-                body=render_inline_comment_body(finding),
+                body=render_inline_comment_body(
+                    finding,
+                    offer_manual_fix=manual_fix_eligible(finding, repo_config, settings),
+                ),
             )
         except Exception:
             logger.exception(
@@ -393,7 +398,8 @@ def run_github_checks_for_snapshot(
         inline_posted_ids: set[int] = set()
         if repo_config.review.post_inline_comments:
             inline_posted_ids = _post_inline_comments(
-                client, db, repository, pull_request, diff_snapshot, findings, settings
+                client, db, repository, pull_request, diff_snapshot, findings, settings,
+                repo_config,
             )
             current_fingerprints = {finding_fingerprint(f) for f in findings}
             _mark_stale_comments_outdated(

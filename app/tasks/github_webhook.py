@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.celery_app import celery_app
+from app.checks.rendering import manual_fix_was_just_checked
 from app.checks.service import start_check_run
 from app.context.service import purge_repository_index
 from app.dashboard.audit import record_audit_event
@@ -18,11 +19,13 @@ from app.models import (
     MergeAttempt,
     PullRequest,
     Repository,
+    ReviewComment,
     WebhookDelivery,
 )
 from app.repo_config import parse_repo_config
 from app.tasks._reliability import handle_task_failure
 from app.tasks.analysis import run_analysis_pipeline_task
+from app.tasks.autofix import run_manual_fix_task
 from app.tenancy.plans import resolve_limits
 from app.tenancy.provisioning import get_or_create_organization
 
@@ -187,6 +190,60 @@ def _handle_installation_repositories(db: Any, payload: dict) -> None:
 
     purge_repository_index(db, removed_repository_ids)
     db.commit()
+
+
+def _handle_pr_review_comment(db: Any, payload: dict) -> None:
+    """React to a human checking the "Apply this fix" checkbox
+    (`app.checks.rendering`) on a finding's inline comment - GitHub delivers
+    this as a `pull_request_review_comment` "edited" event, with the
+    comment's before/after body in `changes.body.from` / `comment.body`.
+
+    Ignores the bot's own edits to the same comment (`mark_manual_fix_applied`/
+    `_failed`, called from `app.autofix.service` after this fires) - without
+    the sender-type check, editing the comment to report an outcome would
+    look like a second "unchecked -> checked" transition and requeue itself
+    forever.
+    """
+    if payload.get("action") != "edited":
+        return
+
+    sender = payload.get("sender") or {}
+    if sender.get("type") == "Bot":
+        return
+
+    changes = payload.get("changes") or {}
+    old_body = (changes.get("body") or {}).get("from") or ""
+    comment_payload = payload.get("comment") or {}
+    new_body = comment_payload.get("body") or ""
+    if not manual_fix_was_just_checked(old_body, new_body):
+        return
+
+    github_comment_id = comment_payload.get("id")
+    if github_comment_id is None:
+        return
+
+    repository_payload = payload.get("repository") or {}
+    github_repo_id = repository_payload.get("id")
+    repository = db.query(Repository).filter_by(github_repo_id=github_repo_id).one_or_none()
+    if repository is None or not repository.is_active:
+        return
+
+    review_comment = (
+        db.query(ReviewComment)
+        .filter_by(repository_id=repository.id, github_comment_id=github_comment_id, kind="inline")
+        .one_or_none()
+    )
+    if review_comment is None or review_comment.ai_finding_id is None:
+        return
+
+    run_manual_fix_task.delay(
+        repository.id,
+        review_comment.diff_snapshot_id,
+        review_comment.ai_finding_id,
+        review_comment.id,
+        sender.get("login", ""),
+        new_body,
+    )
 
 
 def _handle_push(db: Any, payload: dict) -> None:
@@ -359,6 +416,7 @@ _HANDLERS = {
     "installation": _handle_installation,
     "installation_repositories": _handle_installation_repositories,
     "push": _handle_push,
+    "pull_request_review_comment": _handle_pr_review_comment,
 }
 
 

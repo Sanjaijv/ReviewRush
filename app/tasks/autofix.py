@@ -1,12 +1,12 @@
 import logging
 from typing import Any
 
-from app.autofix.service import run_auto_fix_for_snapshot
+from app.autofix.service import run_auto_fix_for_snapshot, run_manual_fix
 from app.celery_app import celery_app
 from app.db import SessionLocal
 from app.github.auth import get_installation_access_token
 from app.github.client import GitHubClient
-from app.models import DiffSnapshot, Repository
+from app.models import AIFinding, DiffSnapshot, Repository, ReviewComment
 from app.tasks._reliability import handle_task_failure
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,61 @@ def run_auto_fix_task(self: Any, repository_id: int, diff_snapshot_id: int) -> s
             exc,
             task_name="reviewrush.run_auto_fix",
             args=(repository_id, diff_snapshot_id),
+            repository_id=repository_id,
+            diff_snapshot_id=diff_snapshot_id,
+        )
+        return "failed"
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reviewrush.run_manual_fix", bind=True)
+def run_manual_fix_task(
+    self: Any,
+    repository_id: int,
+    diff_snapshot_id: int,
+    ai_finding_id: int,
+    review_comment_id: int | None,
+    actor_login: str,
+    current_comment_body: str,
+) -> str:
+    db: Any = SessionLocal()
+    try:
+        repository = db.get(Repository, repository_id)
+        diff_snapshot = db.get(DiffSnapshot, diff_snapshot_id)
+        finding = db.get(AIFinding, ai_finding_id)
+        if repository is None or diff_snapshot is None or finding is None:
+            logger.warning(
+                "manual-fix task received unknown repository, diff snapshot, or finding",
+                extra={
+                    "repository_id": repository_id,
+                    "diff_snapshot_id": diff_snapshot_id,
+                    "ai_finding_id": ai_finding_id,
+                },
+            )
+            return "skipped"
+        review_comment = (
+            db.get(ReviewComment, review_comment_id) if review_comment_id is not None else None
+        )
+
+        token = get_installation_access_token(repository.installation.github_installation_id)
+        with GitHubClient(token) as client:
+            attempt = run_manual_fix(
+                db, client, repository, diff_snapshot, finding, review_comment, actor_login,
+                current_comment_body,
+            )
+        return "skipped" if attempt is None else attempt.status
+    except Exception as exc:
+        logger.exception(
+            "manual-fix task failed",
+            extra={"repository_id": repository_id, "ai_finding_id": ai_finding_id},
+        )
+        db.rollback()
+        handle_task_failure(
+            self,
+            exc,
+            task_name="reviewrush.run_manual_fix",
+            args=(repository_id, diff_snapshot_id, ai_finding_id),
             repository_id=repository_id,
             diff_snapshot_id=diff_snapshot_id,
         )

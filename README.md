@@ -262,6 +262,43 @@ and nothing merges automatically).
   (`app/dashboard/audit.py`), and is idempotent per finding: a rerun never
   re-attempts (or re-pushes) a finding that already has an attempt row.
 
+### On-demand fixes for findings automatic auto-fix skips
+
+`category="security"` findings, and anything above the repo's configured
+severity ceiling, never get an automatic attempt - but their inline comment
+still renders an **"Apply this fix" checkbox**
+(`app/checks/rendering.py::render_inline_comment_body`). Checking it in the
+GitHub UI edits the comment, which GitHub delivers as a
+`pull_request_review_comment` "edited" webhook event
+(`app/tasks/github_webhook.py::_handle_pr_review_comment`) - the checkbox
+transition is what triggers the fix, nothing else about the edit does.
+
+This path differs from the automatic one in one deliberate way: instead of
+opening a separate fix-PR, it **commits the fix directly to the branch
+being reviewed** (`app/autofix/service.py::apply_manual_fix`), using the
+same generate-then-verify pipeline and the same required-checks gate. The
+resulting push is an ordinary push GitHub already knows how to handle - it
+re-triggers a normal review and updates the PR in place, exactly like a
+human pushing the same commit would.
+
+- Same eligibility floor as automatic auto-fix (`missing_tests` excluded
+  structurally either way) - see `manual_fix_eligible`. The checkbox is
+  never offered for a finding automatic auto-fix would already attempt on
+  its own.
+- One-shot, same as the automatic path: an existing `AutoFixAttempt` for
+  the finding is never re-attempted, so re-checking an already-actioned box
+  does nothing.
+- Before committing, the target file's live content on the branch is
+  compared against what it was when the finding was reported
+  (`status="stale_target"` if it's drifted) - refuses to silently overwrite
+  a concurrent edit rather than blindly applying a now-stale line range.
+- Uses `GitHubClient.update_branch_ref`, which never force-pushes: a
+  genuine non-fast-forward conflict is surfaced as `status="error"`, not
+  resolved by discarding whatever moved the branch.
+- Recorded in the same `AutoFixAttempt` table (`trigger="manual"`,
+  `status="committed"` on success, `actor_login` set to whoever checked the
+  box) - `trigger="automatic"` is the original behavior above.
+
 ### Enabling it
 
 Requires **both** a global switch and per-repository consent - either alone
@@ -278,6 +315,13 @@ auto_fix:
   enabled: true
   maximum_severity: low   # or "medium" - never higher
 ```
+
+The on-demand checkbox needs no extra config beyond the above, but the
+GitHub App must be **subscribed to the `pull_request_review_comment` event**
+(App settings → Permissions & events → Subscribe to events) and have
+**write access to pull request reviews** - without both, GitHub never
+delivers the "edited" webhook a checkbox click produces, and the box will
+appear to do nothing when checked.
 
 ## Repository-aware context (Phase 10)
 
