@@ -365,6 +365,39 @@ class GitHubClient:
         )
         return response.json()
 
+    def minimize_comment(self, node_id: str, *, classifier: str = "OUTDATED") -> None:
+        """Collapse a comment via the GraphQL `minimizeComment` mutation, so
+        it no longer shows expanded on the PR by default (the REST API has
+        no equivalent - `update_review_comment` can only change the body
+        text, not hide it). `node_id` is the comment's GraphQL node id (the
+        REST review-comment resource's `node_id` field), not its integer
+        `id`.
+
+        Idempotent: minimizing an already-minimized comment with the same
+        classifier is a no-op server-side, so this is safe to retry.
+        Assumes github.com (`/graphql` alongside the REST base URL) - this
+        codebase does not otherwise support GitHub Enterprise's separate
+        GraphQL path.
+        """
+        query = """
+        mutation($input: MinimizeCommentInput!) {
+          minimizeComment(input: $input) {
+            minimizedComment { isMinimized }
+          }
+        }
+        """
+        response = self._write(
+            "POST",
+            "/graphql",
+            json={
+                "query": query,
+                "variables": {"input": {"subjectId": node_id, "classifier": classifier}},
+            },
+        )
+        body = response.json()
+        if body.get("errors"):
+            raise RuntimeError(f"minimizeComment failed: {body['errors']}")
+
     def get_pull_request(self, owner: str, repo: str, number: int) -> dict:
         """Re-fetch live PR state (head sha, mergeable, mergeable_state, merged,
         draft, state) - Phase 9 must never decide auto-merge from a locally

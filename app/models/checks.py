@@ -40,6 +40,13 @@ class ReviewComment(Base):
     kind: Mapped[str] = mapped_column(String(16))  # "summary" | "inline"
     fingerprint: Mapped[str] = mapped_column(String(64))
     github_comment_id: Mapped[int] = mapped_column(BigInteger)
+    # The comment's GraphQL node id (REST responses include this as
+    # `node_id`), distinct from `github_comment_id`. Only the GraphQL API
+    # can collapse/minimize a comment - this is what `_mark_stale_comments_
+    # outdated` needs to do that instead of just editing the body in place.
+    # Null for rows created before this column existed; those fall back to
+    # the edit-only behavior.
+    github_node_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     line: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="posted")  # "posted" | "outdated"

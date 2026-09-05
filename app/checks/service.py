@@ -126,6 +126,7 @@ def _upsert_review_comment(
     kind: str,
     fingerprint: str,
     github_comment_id: int,
+    github_node_id: str | None,
     path: str | None,
     line: int | None,
 ) -> None:
@@ -139,6 +140,7 @@ def _upsert_review_comment(
             kind=kind,
             fingerprint=fingerprint,
             github_comment_id=github_comment_id,
+            github_node_id=github_node_id,
             path=path,
             line=line,
             status="posted",
@@ -148,6 +150,7 @@ def _upsert_review_comment(
     else:
         row.diff_snapshot_id = diff_snapshot.id
         row.github_comment_id = github_comment_id
+        row.github_node_id = github_node_id
         row.status = "posted"
         row.head_sha = diff_snapshot.head_sha
     try:
@@ -189,6 +192,7 @@ def _post_or_update_summary(
         kind="summary",
         fingerprint=SUMMARY_FINGERPRINT,
         github_comment_id=comment["id"],
+        github_node_id=comment.get("node_id"),
         path=None,
         line=None,
     )
@@ -262,6 +266,7 @@ def _post_inline_comments(
             kind="inline",
             fingerprint=fingerprint,
             github_comment_id=comment["id"],
+            github_node_id=comment.get("node_id"),
             path=finding.file,
             line=finding.start_line,
         )
@@ -280,7 +285,17 @@ def _mark_stale_comments_outdated(
 ) -> None:
     """A finding that was posted for an earlier head_sha but no longer
     appears in the current AIReview has had its underlying code change -
-    edit its comment to say so instead of leaving a silently stale finding.
+    edit its comment to say so, and collapse it via the GraphQL
+    `minimizeComment` mutation so it no longer shows expanded on the PR by
+    default on the next push. Editing the body alone (the REST API's only
+    option) left a resolved finding fully visible until a human manually
+    clicked "Resolve conversation" - minimizing is what actually keeps only
+    current findings visible without that manual step.
+
+    Both calls are best-effort and independent: a comment predating the
+    `github_node_id` column (or a `minimizeComment` failure) still gets its
+    body edited, matching the pre-existing behavior, even though it won't
+    collapse.
     """
     stale = (
         db.query(ReviewComment)
@@ -302,6 +317,18 @@ def _mark_stale_comments_outdated(
             )
             continue
         row.status = "outdated"
+
+        if row.github_node_id:
+            try:
+                client.minimize_comment(row.github_node_id, classifier="OUTDATED")
+            except Exception:
+                logger.exception(
+                    "failed to minimize outdated review comment",
+                    extra={
+                        "repository": repository.full_name,
+                        "comment_id": row.github_comment_id,
+                    },
+                )
     db.commit()
 
 
