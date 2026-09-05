@@ -263,13 +263,15 @@ and nothing merges automatically).
   re-attempts (or re-pushes) a finding that already has an attempt row.
 - A finding left unmerged on its fix-PR is reported again as a "new"
   AIFinding on every later push that still contains it (each review run
-  assigns fresh row ids, and the model rewords titles slightly between
-  runs), which used to pile up one redundant fix-PR per push forever. When
-  a new automatic fix-PR opens, `_close_superseded_fix_prs` closes every
-  earlier still-open fix-PR for the exact same `(category, file,
-  start_line, end_line)` - the same underlying one-line-range issue -
-  with a comment pointing at the new one, so there's only ever one open
-  fix-PR per unresolved finding.
+  assigns fresh row ids, and the model reworks both the title *and* the
+  exact reported line range between runs for the identical issue - observed
+  live as lines 19-19, 18-19, and 18-20 across three runs of the same bug),
+  which used to pile up one redundant fix-PR per push forever. When a new
+  automatic fix-PR opens, `_close_superseded_fix_prs` closes every earlier
+  still-open fix-PR for the same `(category, file)` with an **overlapping**
+  line range - not an exact match, which the model's own instability would
+  defeat - with a comment pointing at the new one, so there's only ever one
+  open fix-PR per unresolved finding.
 
 ### On-demand fixes for findings automatic auto-fix skips
 

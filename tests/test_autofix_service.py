@@ -529,6 +529,53 @@ def test_attempt_fix_closes_superseded_older_fix_prs_for_same_line_range(
     assert str(attempt.pull_request_number) in comment_calls[0][4]
 
 
+def test_attempt_fix_closes_superseded_prs_with_overlapping_but_not_identical_range(
+    db_session, tmp_path
+) -> None:
+    """The model reports slightly different line ranges for the identical
+    issue between runs (observed live: 19-19, 18-19, 18-20 for the same
+    bug) - matching must be by overlap, not exact (start_line, end_line)
+    equality, or this whole feature silently never fires.
+    """
+    repository, snapshot, first_finding = _setup(db_session)
+    old_attempt = AutoFixAttempt(
+        repository_id=repository.id, diff_snapshot_id=snapshot.id,
+        ai_finding_id=first_finding.id, trigger="automatic", status="pr_opened",
+        branch_name="reviewrush-fix/old", pull_request_number=42,
+        pull_request_url="https://github.com/acme/widgets/pull/42",
+    )
+    db_session.add(old_attempt)
+    db_session.commit()
+    assert first_finding.start_line == 2 and first_finding.end_line == 2
+
+    ai_review = db_session.query(AIReview).filter_by(diff_snapshot_id=snapshot.id).one()
+    # Overlaps [2, 2] (shares line 2) without being an exact match.
+    new_finding = AIFinding(
+        repository_id=repository.id, file=first_finding.file,
+        start_line=1, end_line=3, severity=first_finding.severity,
+        category=first_finding.category, title="Slightly different range for the same bug",
+        evidence="evidence text",
+    )
+    ai_review.findings.append(new_finding)
+    db_session.commit()
+
+    fake_client = _FakeGitHubClient()
+    model = _FakeModel(
+        _response({"applicable": True, "replacement_lines": ["fixed line"], "explanation": "why"})
+    )
+
+    with patch("app.autofix.service.workspace_for", _fake_workspace(tmp_path)), \
+         patch("app.autofix.service.build_review_model", return_value=model), \
+         patch("app.autofix.service._verify_fix", return_value=None):
+        attempt = attempt_fix(
+            db_session, fake_client, repository, snapshot, new_finding, _config(), Settings()
+        )
+
+    assert attempt.status == "pr_opened"
+    close_calls = [c for c in fake_client.calls if c[0] == "update_pull_request"]
+    assert close_calls == [("update_pull_request", "acme", "widgets", 42, "closed")]
+
+
 def test_attempt_fix_does_not_close_prs_for_a_different_line_range(db_session, tmp_path) -> None:
     repository, snapshot, first_finding = _setup(db_session)
     old_attempt = AutoFixAttempt(

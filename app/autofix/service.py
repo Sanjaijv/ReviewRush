@@ -380,15 +380,20 @@ def attempt_fix(
 def _find_superseded_fix_attempts(
     db: Any, repository: Repository, finding: AIFinding, current_attempt_id: int
 ) -> list[AutoFixAttempt]:
-    """Prior *automatic* fix-PRs for the same underlying one-line-range
-    issue as `finding` - identified by (category, file, start_line,
-    end_line), not `app.checks.fingerprint.finding_fingerprint`, because
-    that also hashes the finding's `title`, and the model rewords titles
-    slightly between review runs even for the identical issue. A finding
-    that was never actually fixed on the target branch (the fix-PR sat
-    unmerged) gets re-detected as a "new" AIFinding on every later push
-    that still contains it, otherwise piling up one redundant fix-PR per
-    push forever.
+    """Prior *automatic* fix-PRs for the same underlying issue as `finding`
+    - same (category, file), overlapping line range - not
+    `app.checks.fingerprint.finding_fingerprint`, because that hashes the
+    finding's exact `title` and `start_line`/`end_line`, none of which the
+    model reproduces identically between review runs for the identical
+    issue (observed live: the same duplicate-`return`-statement bug was
+    reported as lines 19-19, 18-19, and 18-20 across three separate runs,
+    with three differently-worded titles). Overlap, not equality, is what
+    actually captures "the same line(s) of code" here.
+
+    A finding that was never actually fixed on the target branch (the
+    fix-PR sat unmerged) gets re-detected as a "new" AIFinding on every
+    later push that still contains it, otherwise piling up one redundant
+    fix-PR per push forever.
     """
     return (
         db.query(AutoFixAttempt)
@@ -401,8 +406,8 @@ def _find_superseded_fix_attempts(
             AutoFixAttempt.pull_request_number.is_not(None),
             AIFinding.category == finding.category,
             AIFinding.file == finding.file,
-            AIFinding.start_line == finding.start_line,
-            AIFinding.end_line == finding.end_line,
+            AIFinding.start_line <= finding.end_line,
+            AIFinding.end_line >= finding.start_line,
         )
         .all()
     )
