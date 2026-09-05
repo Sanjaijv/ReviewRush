@@ -3,19 +3,19 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.celery_app import celery_app
-from app.checks.service import start_check_run
+from app.checks.rendering import manual_fix_was_just_checked
 from app.context.service import purge_repository_index
 from app.dashboard.audit import record_audit_event
 from app.db import SessionLocal
-from app.diffs.service import build_diff_snapshot
 from app.github.auth import get_installation_access_token
 from app.github.client import GitHubClient
 from app.github.pr_automation import resolve_branches, sync_pull_request_for_push
 from app.locking import LockNotAcquired, repository_lock
-from app.models import DiffSnapshot, Installation, MergeAttempt, Repository, WebhookDelivery
+from app.models import Installation, Repository, ReviewComment, WebhookDelivery
 from app.repo_config import parse_repo_config
 from app.tasks._reliability import handle_task_failure
-from app.tasks.analysis import run_analysis_pipeline_task
+from app.tasks.autofix import run_manual_fix_task
+from app.tasks.review_trigger import trigger_review_for_commit
 from app.tenancy.plans import resolve_limits
 from app.tenancy.provisioning import get_or_create_organization
 
@@ -182,6 +182,60 @@ def _handle_installation_repositories(db: Any, payload: dict) -> None:
     db.commit()
 
 
+def _handle_pr_review_comment(db: Any, payload: dict) -> None:
+    """React to a human checking the "Apply this fix" checkbox
+    (`app.checks.rendering`) on a finding's inline comment - GitHub delivers
+    this as a `pull_request_review_comment` "edited" event, with the
+    comment's before/after body in `changes.body.from` / `comment.body`.
+
+    Ignores the bot's own edits to the same comment (`mark_manual_fix_applied`/
+    `_failed`, called from `app.autofix.service` after this fires) - without
+    the sender-type check, editing the comment to report an outcome would
+    look like a second "unchecked -> checked" transition and requeue itself
+    forever.
+    """
+    if payload.get("action") != "edited":
+        return
+
+    sender = payload.get("sender") or {}
+    if sender.get("type") == "Bot":
+        return
+
+    changes = payload.get("changes") or {}
+    old_body = (changes.get("body") or {}).get("from") or ""
+    comment_payload = payload.get("comment") or {}
+    new_body = comment_payload.get("body") or ""
+    if not manual_fix_was_just_checked(old_body, new_body):
+        return
+
+    github_comment_id = comment_payload.get("id")
+    if github_comment_id is None:
+        return
+
+    repository_payload = payload.get("repository") or {}
+    github_repo_id = repository_payload.get("id")
+    repository = db.query(Repository).filter_by(github_repo_id=github_repo_id).one_or_none()
+    if repository is None or not repository.is_active:
+        return
+
+    review_comment = (
+        db.query(ReviewComment)
+        .filter_by(repository_id=repository.id, github_comment_id=github_comment_id, kind="inline")
+        .one_or_none()
+    )
+    if review_comment is None or review_comment.ai_finding_id is None:
+        return
+
+    run_manual_fix_task.delay(
+        repository.id,
+        review_comment.diff_snapshot_id,
+        review_comment.ai_finding_id,
+        review_comment.id,
+        sender.get("login", ""),
+        new_body,
+    )
+
+
 def _handle_push(db: Any, payload: dict) -> None:
     ref = payload.get("ref") or ""
     if not ref.startswith("refs/heads/"):
@@ -242,7 +296,7 @@ def _handle_push(db: Any, payload: dict) -> None:
         # duplicate PR would get created.
         try:
             with repository_lock(f"pr-sync:{repository.id}"):
-                sync_pull_request_for_push(
+                pull_request = sync_pull_request_for_push(
                     db=db,
                     client=client,
                     repository=repository,
@@ -258,94 +312,14 @@ def _handle_push(db: Any, payload: dict) -> None:
             )
             return
 
-        _trigger_analysis(db, client, repository, target_branch, head_sha)
-
-
-def _trigger_analysis(
-    db: Any, client: GitHubClient, repository: Repository, target_branch: str, head_sha: str
-) -> None:
-    """Build the immutable diff snapshot for this push and queue the
-    deterministic analysis pipeline against it.
-
-    Uses the target branch's current head as the comparison base - if that
-    branch moves before the compare call resolves, GitHub's merge-base
-    comparison still returns a valid (if slightly stale) merge-base, and the
-    snapshot itself is keyed to the immutable head_sha regardless.
-    """
-    base_sha = client.get_ref_sha(repository.owner, repository.name, target_branch)
-    if base_sha is None:
-        logger.warning(
-            "target branch has no head, skipping diff snapshot",
-            extra={"repository": repository.full_name, "target_branch": target_branch},
-        )
-        return
-
-    snapshot = build_diff_snapshot(
-        db=db,
-        client=client,
-        repository=repository,
-        base_sha=base_sha,
-        head_sha=head_sha,
-    )
-    _supersede_previous_snapshots(db, repository, snapshot)
-    # Best-effort: an in-progress Check Run at review start (Phase 8) so the
-    # PR shows review activity immediately. Its absence never blocks the
-    # pipeline - the checks task creates one on the fly at completion time.
-    start_check_run(client, repository, snapshot, db)
-    run_analysis_pipeline_task.delay(repository.id, snapshot.id)
-
-
-def _supersede_previous_snapshots(
-    db: Any, repository: Repository, new_snapshot: DiffSnapshot
-) -> None:
-    """Automatically cancel every other still-active DiffSnapshot for this
-    repository now that a newer push has produced its own snapshot (Phase
-    13 graceful cancellation).
-
-    Every pipeline task stage already checks `status == "cancelled"` before
-    starting new work (see app/tasks/analysis.py et al.) and no-ops if so -
-    this is what makes marking a run cancelled here actually stop it from
-    doing further wasted work, without needing to kill anything already
-    in-flight. Manual cancellation from the dashboard (app/dashboard/control.py)
-    remains available for a run this doesn't catch, e.g. a second PR/branch.
-
-    Excludes any snapshot with a successful MergeAttempt: a commit that has
-    already been merged is a permanent fact, never something a later push
-    "supersedes" - marking it cancelled after the fact would corrupt the
-    audit trail for no reason.
-    """
-    already_merged_ids = db.query(MergeAttempt.diff_snapshot_id).filter(
-        MergeAttempt.repository_id == repository.id, MergeAttempt.outcome == "merged"
-    )
-    stale_snapshots = (
-        db.query(DiffSnapshot)
-        .filter(
-            DiffSnapshot.repository_id == repository.id,
-            DiffSnapshot.id != new_snapshot.id,
-            DiffSnapshot.status == "complete",
-            DiffSnapshot.id.notin_(already_merged_ids),
-        )
-        .all()
-    )
-    if not stale_snapshots:
-        return
-    for stale in stale_snapshots:
-        stale.status = "cancelled"
-        logger.info(
-            "review run superseded by a newer push, auto-cancelled",
-            extra={
-                "repository": repository.full_name,
-                "head_sha": stale.head_sha,
-                "superseded_by": new_snapshot.head_sha,
-            },
-        )
-    db.commit()
+        trigger_review_for_commit(db, client, repository, target_branch, head_sha, pull_request)
 
 
 _HANDLERS = {
     "installation": _handle_installation,
     "installation_repositories": _handle_installation_repositories,
     "push": _handle_push,
+    "pull_request_review_comment": _handle_pr_review_comment,
 }
 
 

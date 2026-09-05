@@ -207,8 +207,13 @@ class Settings(BaseSettings):
     # GitHub user. Never reuse github_webhook_secret or any other secret.
     dashboard_session_secret: str = Field(default="")
     dashboard_session_ttl_seconds: int = Field(default=3600)
-    # Origin the OAuth callback redirects back to, e.g. https://reviewrush.example.com.
-    dashboard_base_url: str = Field(default="http://localhost:8000")
+    # Public origin of the Next.js dashboard frontend (frontend/), e.g.
+    # https://reviewrush.example.com - not this API service's own origin.
+    # The OAuth callback redirects the browser to "<dashboard_base_url>/api/
+    # v1/dashboard/auth/callback" (reached through the frontend's /api/*
+    # proxy - see frontend/next.config.ts) and then to "<dashboard_base_url>/"
+    # once the session cookie is set, landing the user back on the frontend.
+    dashboard_base_url: str = Field(default="http://localhost:3010")
     dashboard_default_retention_days: int = Field(default=90)
 
     # Reliability, observability, and production hardening (Phase 13).

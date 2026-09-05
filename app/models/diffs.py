@@ -41,6 +41,20 @@ class DiffSnapshot(Base):
     head_sha: Mapped[str] = mapped_column(String(40))
     base_sha: Mapped[str] = mapped_column(String(40))
     merge_base_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The PullRequest this snapshot's push was synced against, stamped once at
+    # creation time by `app.diffs.service.build_diff_snapshot` right after
+    # `sync_pull_request_for_push` ran for the same push. Null when the push
+    # had no open PR (e.g. a direct push to the target branch itself).
+    #
+    # This is the stable identifier later stages (checks, autofix) must use to
+    # find "the PR this review belongs to" - PullRequest.head_sha is mutable
+    # (overwritten by every subsequent push while this snapshot's own head_sha
+    # stays fixed), so a later stage that is still slow-running when a newer
+    # push lands can no longer find its PR by matching head_sha once the row
+    # has moved on. Matching by this FK instead is immune to that race.
+    pull_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pull_requests.id"), nullable=True
+    )
     commits: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
     # "complete" | "cancelled" (Phase 12 dashboard cancel control - a task

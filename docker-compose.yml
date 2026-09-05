@@ -86,6 +86,20 @@ services:
       # different filesystem namespaces.
       - analysis_workspace:/var/lib/reviewrush/analysis
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked in at `next build` time (rewrites() isn't re-read at
+        # container start) - the frontend container reaches the api
+        # container by its Compose service name, not localhost or the
+        # host-published 8010 port.
+        BACKEND_ORIGIN: http://api:8000
+    ports:
+      - "3010:3000"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   analysis_workspace:

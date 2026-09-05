@@ -97,6 +97,31 @@ def test_minimize_comment_posts_graphql_mutation() -> None:
     assert "minimizeComment" in kwargs["json"]["query"]
 
 
+def test_update_pull_request_can_set_state_closed() -> None:
+    client, transport = _client_with_mocked_transport()
+    transport.patch.return_value.json.return_value = {"number": 4, "state": "closed"}
+
+    result = client.update_pull_request("acme", "widgets", 4, state="closed")
+
+    args, kwargs = transport.patch.call_args
+    assert args[0] == "/repos/acme/widgets/pulls/4"
+    assert kwargs["json"] == {"state": "closed"}
+    assert result == {"number": 4, "state": "closed"}
+
+
+def test_update_branch_ref_patches_branch_sha() -> None:
+    client, transport = _client_with_mocked_transport()
+    transport.patch.return_value.json.return_value = {"ref": "refs/heads/foundations"}
+
+    result = client.update_branch_ref("acme", "widgets", "foundations", "newsha123")
+
+    args, kwargs = transport.patch.call_args
+    assert args[0] == "/repos/acme/widgets/git/refs/heads/foundations"
+    assert kwargs["json"] == {"sha": "newsha123"}
+    assert "force" not in kwargs["json"]
+    assert result == {"ref": "refs/heads/foundations"}
+
+
 def test_minimize_comment_raises_on_graphql_errors() -> None:
     client, transport = _client_with_mocked_transport()
     transport.post.return_value.json.return_value = {

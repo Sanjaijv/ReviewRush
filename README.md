@@ -22,12 +22,34 @@ docker compose up --build
 - Liveness: http://localhost:8010/api/v1/health/live
 - Readiness (checks DB + Redis): http://localhost:8010/api/v1/health/ready
 - GitHub webhook: http://localhost:8010/api/v1/github/webhook (`POST`, signed)
+- Dashboard (Next.js frontend, see below): http://localhost:3010
 
 Apply database migrations (from the host, with the stack running):
 
 ```bash
 docker compose exec api alembic upgrade head
 ```
+
+## Dashboard frontend
+
+The dashboard UI (Phase 12) is a separate Next.js app in [frontend/](frontend/), its
+own process/origin from the API. It proxies `/api/*` requests back to the FastAPI
+service (`frontend/next.config.ts`'s `rewrites()`) so the browser only ever talks to
+one origin and the existing GitHub-OAuth session cookie just works - no separate
+frontend auth or BFF layer.
+
+`docker compose up --build` (above) builds and runs it automatically as the
+`frontend` service, at http://localhost:3010. To run it directly on the host instead:
+
+```bash
+cd frontend
+cp .env.example .env.local   # BACKEND_ORIGIN, defaults to http://localhost:8010
+npm install
+npm run dev -- -p 3010
+```
+
+Either way, set `DASHBOARD_BASE_URL` (root `.env`) to wherever the frontend is
+actually served from - it's where the OAuth callback redirects after login.
 
 ## Run without Docker
 
@@ -261,6 +283,70 @@ and nothing merges automatically).
   `not_applicable`, `invalid_output`, or `error`) and in the audit log
   (`app/dashboard/audit.py`), and is idempotent per finding: a rerun never
   re-attempts (or re-pushes) a finding that already has an attempt row.
+- A finding left unmerged on its fix-PR is reported again as a "new"
+  AIFinding on every later push that still contains it (each review run
+  assigns fresh row ids, and the model reworks both the title *and* the
+  exact reported line range between runs for the identical issue - observed
+  live as lines 19-19, 18-19, and 18-20 across three runs of the same bug),
+  which used to pile up one redundant fix-PR per push forever. When a new
+  automatic fix-PR opens, `_close_superseded_fix_prs` closes every earlier
+  still-open fix-PR for the same `(category, file)` with an **overlapping**
+  line range - not an exact match, which the model's own instability would
+  defeat - with a comment pointing at the new one, so there's only ever one
+  open fix-PR per unresolved finding.
+
+### On-demand fixes for findings automatic auto-fix skips
+
+`category="security"` findings, and anything above the repo's configured
+severity ceiling, never get an automatic attempt - but their inline comment
+still renders an **"Apply this fix" checkbox**
+(`app/checks/rendering.py::render_inline_comment_body`). Checking it in the
+GitHub UI edits the comment, which GitHub delivers as a
+`pull_request_review_comment` "edited" webhook event
+(`app/tasks/github_webhook.py::_handle_pr_review_comment`) - the checkbox
+transition is what triggers the fix, nothing else about the edit does.
+
+This path differs from the automatic one in one deliberate way: instead of
+opening a separate fix-PR, it **commits the fix directly to the branch
+being reviewed** (`app/autofix/service.py::apply_manual_fix`), using the
+same generate-then-verify pipeline and the same required-checks gate. The
+resulting push is an ordinary push GitHub already knows how to handle - it
+re-triggers a normal review and updates the PR in place, exactly like a
+human pushing the same commit would.
+
+- Same eligibility floor as automatic auto-fix (`missing_tests` excluded
+  structurally either way) - see `manual_fix_eligible`. The checkbox is
+  never offered for a finding automatic auto-fix would already attempt on
+  its own.
+- One-shot, same as the automatic path: an existing `AutoFixAttempt` for
+  the finding is never re-attempted, so re-checking an already-actioned box
+  does nothing.
+- Before committing, the target file's live content on the branch is
+  compared against what it was when the finding was reported
+  (`status="stale_target"` if it's drifted) - refuses to silently overwrite
+  a concurrent edit rather than blindly applying a now-stale line range.
+- Uses `GitHubClient.update_branch_ref`, which never force-pushes: a
+  genuine non-fast-forward conflict is surfaced as `status="error"`, not
+  resolved by discarding whatever moved the branch.
+- Recorded in the same `AutoFixAttempt` table (`trigger="manual"`,
+  `status="committed"` on success, `actor_login` set to whoever checked the
+  box) - `trigger="automatic"` is the original behavior above.
+- The resulting commit's own push webhook is intentionally ignored (every
+  bot-authored push is, to avoid an automation loop - see
+  `app.tasks.github_webhook._handle_push`), so a fresh review/check run for
+  it is triggered explicitly instead, right after the commit lands
+  (`app.tasks.review_trigger.trigger_review_for_commit`, the same snapshot-
+  building/check-run/analysis-queueing logic the push handler itself uses).
+  Without this, the branch's required check would keep pointing at the
+  pre-fix commit.
+- The checkbox comment's `ReviewComment` row is marked `status="resolved"`
+  once a terminal outcome ("Applied" or "Fix attempt failed") is recorded,
+  so `app.checks.service._mark_stale_comments_outdated`'s `status="posted"`
+  sweep - which the fix's own triggered re-review runs, since the finding
+  it just resolved is genuinely gone from the fresh diff - never
+  overwrites that text with the generic outdated marker. Confirmed live:
+  without this, the very re-review a successful fix triggers immediately
+  clobbered its own "Applied" comment.
 
 ### Enabling it
 
@@ -278,6 +364,13 @@ auto_fix:
   enabled: true
   maximum_severity: low   # or "medium" - never higher
 ```
+
+The on-demand checkbox needs no extra config beyond the above, but the
+GitHub App must be **subscribed to the `pull_request_review_comment` event**
+(App settings → Permissions & events → Subscribe to events) and have
+**write access to pull request reviews** - without both, GitHub never
+delivers the "edited" webhook a checkbox click produces, and the box will
+appear to do nothing when checked.
 
 ## Repository-aware context (Phase 10)
 
