@@ -12,7 +12,14 @@ from app.github.auth import get_installation_access_token
 from app.github.client import GitHubClient
 from app.github.pr_automation import resolve_branches, sync_pull_request_for_push
 from app.locking import LockNotAcquired, repository_lock
-from app.models import DiffSnapshot, Installation, MergeAttempt, Repository, WebhookDelivery
+from app.models import (
+    DiffSnapshot,
+    Installation,
+    MergeAttempt,
+    PullRequest,
+    Repository,
+    WebhookDelivery,
+)
 from app.repo_config import parse_repo_config
 from app.tasks._reliability import handle_task_failure
 from app.tasks.analysis import run_analysis_pipeline_task
@@ -242,7 +249,7 @@ def _handle_push(db: Any, payload: dict) -> None:
         # duplicate PR would get created.
         try:
             with repository_lock(f"pr-sync:{repository.id}"):
-                sync_pull_request_for_push(
+                pull_request = sync_pull_request_for_push(
                     db=db,
                     client=client,
                     repository=repository,
@@ -258,11 +265,16 @@ def _handle_push(db: Any, payload: dict) -> None:
             )
             return
 
-        _trigger_analysis(db, client, repository, target_branch, head_sha)
+        _trigger_analysis(db, client, repository, target_branch, head_sha, pull_request)
 
 
 def _trigger_analysis(
-    db: Any, client: GitHubClient, repository: Repository, target_branch: str, head_sha: str
+    db: Any,
+    client: GitHubClient,
+    repository: Repository,
+    target_branch: str,
+    head_sha: str,
+    pull_request: PullRequest | None,
 ) -> None:
     """Build the immutable diff snapshot for this push and queue the
     deterministic analysis pipeline against it.
@@ -286,6 +298,7 @@ def _trigger_analysis(
         repository=repository,
         base_sha=base_sha,
         head_sha=head_sha,
+        pull_request_id=pull_request.id if pull_request is not None else None,
     )
     _supersede_previous_snapshots(db, repository, snapshot)
     # Best-effort: an in-progress Check Run at review start (Phase 8) so the

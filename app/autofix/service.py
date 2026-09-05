@@ -74,6 +74,17 @@ def eligible_findings(
 def _find_pull_request(
     db: Any, repository: Repository, diff_snapshot: DiffSnapshot
 ) -> PullRequest | None:
+    """Look up the PR this diff snapshot's push was synced against.
+
+    Prefers the stable `pull_request_id` FK stamped on the snapshot at
+    creation time; falls back to matching `PullRequest.head_sha` for
+    snapshots created before that column existed. Auto-fix's own model
+    call + verification can easily take longer than the next push a
+    developer makes - the FK path is what keeps this lookup correct even
+    when `PullRequest.head_sha` has since moved on to that newer push.
+    """
+    if diff_snapshot.pull_request_id is not None:
+        return db.get(PullRequest, diff_snapshot.pull_request_id)
     return (
         db.query(PullRequest)
         .filter_by(repository_id=repository.id, head_sha=diff_snapshot.head_sha)

@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
-from app.checks.service import run_github_checks_for_snapshot, start_check_run
+from app.checks.service import _find_pull_request, run_github_checks_for_snapshot, start_check_run
 from app.config import Settings
 from app.models import (
     AIFinding,
@@ -393,6 +393,42 @@ def test_minimize_failure_does_not_prevent_marking_outdated() -> None:
         run_github_checks_for_snapshot(db, _repository(), _snapshot(github_check_run_id=999))
 
     assert stale_inline.status == "outdated"
+
+
+def test_find_pull_request_prefers_pull_request_id_fk_over_head_sha() -> None:
+    """A stale `PullRequest.head_sha` (already moved on to a newer push
+    while this snapshot's checks were still running) must not stop
+    `_find_pull_request` from finding the PR when `pull_request_id` was
+    stamped at snapshot creation time.
+    """
+    db = MagicMock()
+    matched = PullRequest(
+        id=9, repository_id=1, github_pr_number=2, head_branch="foundations",
+        base_branch="main", head_sha="a-much-newer-sha", state="open",
+    )
+    db.get.return_value = matched
+    diff_snapshot = _snapshot(id=1, pull_request_id=9)
+    with patch("app.checks.service.get_settings", return_value=Settings()):
+        result = _find_pull_request(db, _repository(), diff_snapshot)
+
+    assert result is matched
+    db.get.assert_called_once_with(PullRequest, 9)
+    db.query.assert_not_called()
+
+
+def test_find_pull_request_falls_back_to_head_sha_match_when_fk_missing() -> None:
+    db = MagicMock()
+    matched = PullRequest(
+        id=9, repository_id=1, github_pr_number=2, head_branch="foundations",
+        base_branch="main", head_sha="sha1", state="open",
+    )
+    db.query.return_value.filter_by.return_value.one_or_none.return_value = matched
+    diff_snapshot = _snapshot(id=1, head_sha="sha1", pull_request_id=None)
+
+    result = _find_pull_request(db, _repository(), diff_snapshot)
+
+    assert result is matched
+    db.get.assert_not_called()
 
 
 def test_start_check_run_is_best_effort_on_malformed_response() -> None:

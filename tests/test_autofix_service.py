@@ -1,12 +1,12 @@
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import text
 
 from app.ai.model import ModelResponse
 from app.analysis.workspace import Workspace
-from app.autofix.service import attempt_fix
+from app.autofix.service import _find_pull_request, attempt_fix
 from app.config import Settings
 from app.models import (
     AIFinding,
@@ -18,6 +18,49 @@ from app.models import (
     Repository,
 )
 from app.repo_config import AutoFixConfig, RepoConfig
+
+
+def test_find_pull_request_prefers_pull_request_id_fk_over_head_sha() -> None:
+    """A stale `PullRequest.head_sha` (already moved on to a newer push
+    while this snapshot's slow autofix job was still running) must not stop
+    `_find_pull_request` from finding the PR when `pull_request_id` was
+    stamped at snapshot creation time - that FK is what this test guards.
+    """
+    db = MagicMock()
+    matched = PullRequest(
+        id=9, repository_id=1, github_pr_number=2, head_branch="foundations",
+        base_branch="main", head_sha="a-much-newer-sha", state="open",
+    )
+    db.get.return_value = matched
+    diff_snapshot = DiffSnapshot(
+        id=1, repository_id=1, head_sha="the-old-sha-this-snapshot-was-built-for",
+        base_sha="base", pull_request_id=9,
+    )
+    repository = Repository(id=1, owner="acme", name="widgets", full_name="acme/widgets")
+
+    result = _find_pull_request(db, repository, diff_snapshot)
+
+    assert result is matched
+    db.get.assert_called_once_with(PullRequest, 9)
+    db.query.assert_not_called()
+
+
+def test_find_pull_request_falls_back_to_head_sha_match_when_fk_missing() -> None:
+    db = MagicMock()
+    matched = PullRequest(
+        id=9, repository_id=1, github_pr_number=2, head_branch="foundations",
+        base_branch="main", head_sha="sha1", state="open",
+    )
+    db.query.return_value.filter_by.return_value.one_or_none.return_value = matched
+    diff_snapshot = DiffSnapshot(
+        id=1, repository_id=1, head_sha="sha1", base_sha="base", pull_request_id=None,
+    )
+    repository = Repository(id=1, owner="acme", name="widgets", full_name="acme/widgets")
+
+    result = _find_pull_request(db, repository, diff_snapshot)
+
+    assert result is matched
+    db.get.assert_not_called()
 
 
 @pytest.fixture(autouse=True)

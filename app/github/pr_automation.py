@@ -88,7 +88,7 @@ def _upsert_local_pull_request(
     head_branch: str,
     base_branch: str,
     head_sha: str,
-) -> None:
+) -> PullRequest:
     number = pr_payload["number"]
     record = (
         db.query(PullRequest)
@@ -112,6 +112,8 @@ def _upsert_local_pull_request(
         record.base_sha = base_sha
         record.state = pr_payload.get("state", "open")
     db.commit()
+    db.refresh(record)
+    return record
 
 
 def sync_pull_request_for_push(
@@ -122,9 +124,14 @@ def sync_pull_request_for_push(
     target_branch: str,
     head_sha: str,
     commits: list[dict],
-) -> None:
+) -> PullRequest | None:
     """Create or update the source -> target PR for one push, unless a newer
-    push has already superseded this head SHA (debounce).
+    push has already superseded this head SHA (debounce). Returns the local
+    PullRequest row synced for this exact push (or None if there is none,
+    or the push was superseded) - the caller stamps this onto the
+    DiffSnapshot it's about to build, since PullRequest.head_sha itself is
+    mutable and can no longer be trusted to identify this push once a
+    subsequent one lands.
     """
     owner, name = repository.owner, repository.name
 
@@ -134,7 +141,7 @@ def sync_pull_request_for_push(
             "push superseded by a newer commit, skipping",
             extra={"repository": repository.full_name, "branch": source_branch},
         )
-        return
+        return None
 
     open_prs = client.list_open_pull_requests(owner, name, head=source_branch, base=target_branch)
     automated_section = render_automated_section(commits, head_sha, source_branch, target_branch)
@@ -143,12 +150,14 @@ def sync_pull_request_for_push(
         pr_payload = open_prs[0]
         new_body = merge_pr_body(pr_payload.get("body"), automated_section)
         updated = client.update_pull_request(owner, name, pr_payload["number"], body=new_body)
-        _upsert_local_pull_request(db, repository, updated, source_branch, target_branch, head_sha)
+        record = _upsert_local_pull_request(
+            db, repository, updated, source_branch, target_branch, head_sha
+        )
         logger.info(
             "updated existing pull request",
             extra={"repository": repository.full_name, "pr_number": pr_payload["number"]},
         )
-        return
+        return record
 
     title = build_title(commits, source_branch, target_branch)
     try:
@@ -161,11 +170,14 @@ def sync_pull_request_for_push(
                 "no diff to open a pull request for, skipping",
                 extra={"repository": repository.full_name, "branch": source_branch},
             )
-            return
+            return None
         raise
 
-    _upsert_local_pull_request(db, repository, created, source_branch, target_branch, head_sha)
+    record = _upsert_local_pull_request(
+        db, repository, created, source_branch, target_branch, head_sha
+    )
     logger.info(
         "created pull request",
         extra={"repository": repository.full_name, "pr_number": created["number"]},
     )
+    return record

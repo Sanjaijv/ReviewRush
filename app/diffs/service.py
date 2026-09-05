@@ -161,6 +161,7 @@ def build_diff_snapshot(
     head_sha: str,
     limits: DiffLimits | None = None,
     fetch_truncated_content: bool = False,
+    pull_request_id: int | None = None,
 ) -> DiffSnapshot:
     """Build and persist the normalized diff between base_sha and head_sha, or
     return the existing snapshot if one was already stored for this head_sha.
@@ -230,6 +231,7 @@ def build_diff_snapshot(
         head_sha=head_sha,
         base_sha=base_sha,
         merge_base_sha=merge_base_sha,
+        pull_request_id=pull_request_id,
         commits=commits,
         status="oversized" if evaluation.oversized else "complete",
         truncated=any_truncated,

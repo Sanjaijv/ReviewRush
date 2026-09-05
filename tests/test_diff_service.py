@@ -30,6 +30,40 @@ def _default_limits() -> DiffLimits:
     )
 
 
+def test_new_snapshot_stamps_pull_request_id_when_given() -> None:
+    db = _db_with_no_existing_snapshot()
+    client = MagicMock()
+    client.get_file_contents.return_value = None
+    client.compare_commits.return_value = {
+        "merge_base_commit": {"sha": "base123"},
+        "commits": [],
+        "files": [],
+    }
+    repository = _FakeRepository()
+
+    result = build_diff_snapshot(
+        db, client, repository, base_sha="main-sha", head_sha="sha1", pull_request_id=42,
+    )
+
+    assert result.pull_request_id == 42
+
+
+def test_new_snapshot_pull_request_id_defaults_to_none() -> None:
+    db = _db_with_no_existing_snapshot()
+    client = MagicMock()
+    client.get_file_contents.return_value = None
+    client.compare_commits.return_value = {
+        "merge_base_commit": {"sha": "base123"},
+        "commits": [],
+        "files": [],
+    }
+    repository = _FakeRepository()
+
+    result = build_diff_snapshot(db, client, repository, base_sha="main-sha", head_sha="sha1")
+
+    assert result.pull_request_id is None
+
+
 def test_returns_existing_snapshot_without_recomputing() -> None:
     db = MagicMock()
     existing = DiffSnapshot(repository_id=1, head_sha="sha1", base_sha="main-sha")

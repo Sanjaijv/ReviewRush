@@ -12,6 +12,7 @@ from app.github.pr_automation import (
     resolve_branches,
     sync_pull_request_for_push,
 )
+from app.models import PullRequest
 from app.repo_config import RepoConfig
 
 
@@ -94,7 +95,7 @@ def test_sync_skips_when_push_is_superseded() -> None:
     client.get_ref_sha.return_value = "newer-sha"
     repository = _FakeRepository()
 
-    sync_pull_request_for_push(
+    result = sync_pull_request_for_push(
         db=db,
         client=client,
         repository=repository,
@@ -106,6 +107,7 @@ def test_sync_skips_when_push_is_superseded() -> None:
 
     client.list_open_pull_requests.assert_not_called()
     db.add.assert_not_called()
+    assert result is None
 
 
 def test_sync_creates_pr_when_none_open() -> None:
@@ -121,7 +123,7 @@ def test_sync_creates_pr_when_none_open() -> None:
     }
     repository = _FakeRepository()
 
-    sync_pull_request_for_push(
+    result = sync_pull_request_for_push(
         db=db,
         client=client,
         repository=repository,
@@ -134,6 +136,13 @@ def test_sync_creates_pr_when_none_open() -> None:
     client.create_pull_request.assert_called_once()
     db.add.assert_called_once()
     db.commit.assert_called_once()
+    # The caller (app.tasks.github_webhook) stamps this onto the
+    # DiffSnapshot it's about to build, so it must be the actual local
+    # PullRequest row, not None - see the race this fixes in
+    # app.checks.service._find_pull_request / app.autofix.service._find_pull_request.
+    assert isinstance(result, PullRequest)
+    assert result.github_pr_number == 42
+    assert result.head_sha == "sha123"
 
 
 def test_sync_updates_existing_pr_without_creating() -> None:
@@ -151,7 +160,7 @@ def test_sync_updates_existing_pr_without_creating() -> None:
     }
     repository = _FakeRepository()
 
-    sync_pull_request_for_push(
+    result = sync_pull_request_for_push(
         db=db,
         client=client,
         repository=repository,
@@ -166,6 +175,8 @@ def test_sync_updates_existing_pr_without_creating() -> None:
     updated_body = client.update_pull_request.call_args.kwargs["body"]
     assert "Human text." in updated_body
     assert AUTOMATED_SECTION_START in updated_body
+    assert isinstance(result, PullRequest)
+    assert result.github_pr_number == 7
 
 
 def test_sync_swallows_422_when_nothing_to_compare() -> None:
@@ -180,7 +191,7 @@ def test_sync_swallows_422_when_nothing_to_compare() -> None:
     )
     repository = _FakeRepository()
 
-    sync_pull_request_for_push(
+    result = sync_pull_request_for_push(
         db=db,
         client=client,
         repository=repository,
@@ -191,6 +202,7 @@ def test_sync_swallows_422_when_nothing_to_compare() -> None:
     )
 
     db.add.assert_not_called()
+    assert result is None
 
 
 def test_sync_reraises_non_422_errors() -> None:

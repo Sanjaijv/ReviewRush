@@ -99,6 +99,18 @@ def _complete_check_run(
 def _find_pull_request(
     db: Any, repository: Repository, diff_snapshot: DiffSnapshot
 ) -> PullRequest | None:
+    """Look up the PR this diff snapshot's push was synced against.
+
+    Prefers the stable `pull_request_id` FK stamped on the snapshot at
+    creation time; falls back to matching `PullRequest.head_sha` for
+    snapshots created before that column existed. The FK path is immune to
+    the race where a newer push has since moved `PullRequest.head_sha` on
+    before this (potentially slow) stage got to run - the head_sha fallback
+    is not, and can wrongly come up empty for a PR that is very much still
+    open.
+    """
+    if diff_snapshot.pull_request_id is not None:
+        return db.get(PullRequest, diff_snapshot.pull_request_id)
     return (
         db.query(PullRequest)
         .filter_by(repository_id=repository.id, head_sha=diff_snapshot.head_sha)
