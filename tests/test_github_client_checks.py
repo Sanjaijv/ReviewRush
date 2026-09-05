@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.github.client import GitHubClient
 
 
@@ -76,3 +78,30 @@ def test_update_issue_comment_patches_body() -> None:
     args, kwargs = transport.patch.call_args
     assert args[0] == "/repos/acme/widgets/issues/comments/9"
     assert kwargs["json"] == {"body": "new body"}
+
+
+def test_minimize_comment_posts_graphql_mutation() -> None:
+    client, transport = _client_with_mocked_transport()
+    transport.post.return_value.json.return_value = {
+        "data": {"minimizeComment": {"minimizedComment": {"isMinimized": True}}}
+    }
+
+    client.minimize_comment("PRRC_kwabc123", classifier="OUTDATED")
+
+    args, kwargs = transport.post.call_args
+    assert args[0] == "/graphql"
+    assert kwargs["json"]["variables"]["input"] == {
+        "subjectId": "PRRC_kwabc123",
+        "classifier": "OUTDATED",
+    }
+    assert "minimizeComment" in kwargs["json"]["query"]
+
+
+def test_minimize_comment_raises_on_graphql_errors() -> None:
+    client, transport = _client_with_mocked_transport()
+    transport.post.return_value.json.return_value = {
+        "errors": [{"message": "Could not resolve to a node"}]
+    }
+
+    with pytest.raises(RuntimeError, match="minimizeComment failed"):
+        client.minimize_comment("bad-node-id")

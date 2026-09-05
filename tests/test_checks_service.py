@@ -275,6 +275,126 @@ def test_rerun_reuses_existing_summary_comment_instead_of_creating_new() -> None
     assert args[2] == 555
 
 
+def test_outdated_inline_comment_is_edited_and_minimized() -> None:
+    decision = PolicyDecision(
+        id=1, repository_id=1, diff_snapshot_id=1, decision="APPROVE", risk="LOW", reasons=["ok"]
+    )
+    ai_review = AIReview(id=1, repository_id=1, diff_snapshot_id=1, status="completed", summary="s")
+    ai_review.findings = []  # the finding that existed last push is gone now
+    pull_request = PullRequest(
+        id=1, repository_id=1, github_pr_number=9, head_branch="foundations", base_branch="main"
+    )
+    stale_inline = ReviewComment(
+        id=2,
+        repository_id=1,
+        pull_request_id=1,
+        diff_snapshot_id=0,
+        kind="inline",
+        fingerprint="old-fp",
+        github_comment_id=42,
+        github_node_id="PRRC_kwabc123",
+        status="posted",
+        head_sha="sha0",
+    )
+    db = _make_db(
+        decision=decision,
+        ai_review=ai_review,
+        tool_runs=[],
+        pull_request=pull_request,
+        existing_comments={("inline", "old-fp"): stale_inline},
+    )
+    client = _github_client()
+
+    with _patched(), patch("app.checks.service.GitHubClient", return_value=client):
+        run_github_checks_for_snapshot(db, _repository(), _snapshot(github_check_run_id=999))
+
+    client.update_review_comment.assert_called_once()
+    args, _ = client.update_review_comment.call_args
+    assert args[2] == 42
+
+    client.minimize_comment.assert_called_once_with("PRRC_kwabc123", classifier="OUTDATED")
+    assert stale_inline.status == "outdated"
+
+
+def test_outdated_inline_comment_without_node_id_is_edited_but_not_minimized() -> None:
+    """Rows created before the github_node_id column existed have no node id
+    to minimize - they still fall back to the pre-existing edit-only
+    behavior instead of erroring.
+    """
+    decision = PolicyDecision(
+        id=1, repository_id=1, diff_snapshot_id=1, decision="APPROVE", risk="LOW", reasons=["ok"]
+    )
+    ai_review = AIReview(id=1, repository_id=1, diff_snapshot_id=1, status="completed", summary="s")
+    ai_review.findings = []
+    pull_request = PullRequest(
+        id=1, repository_id=1, github_pr_number=9, head_branch="foundations", base_branch="main"
+    )
+    stale_inline = ReviewComment(
+        id=2,
+        repository_id=1,
+        pull_request_id=1,
+        diff_snapshot_id=0,
+        kind="inline",
+        fingerprint="old-fp",
+        github_comment_id=42,
+        github_node_id=None,
+        status="posted",
+        head_sha="sha0",
+    )
+    db = _make_db(
+        decision=decision,
+        ai_review=ai_review,
+        tool_runs=[],
+        pull_request=pull_request,
+        existing_comments={("inline", "old-fp"): stale_inline},
+    )
+    client = _github_client()
+
+    with _patched(), patch("app.checks.service.GitHubClient", return_value=client):
+        run_github_checks_for_snapshot(db, _repository(), _snapshot(github_check_run_id=999))
+
+    client.update_review_comment.assert_called_once()
+    client.minimize_comment.assert_not_called()
+    assert stale_inline.status == "outdated"
+
+
+def test_minimize_failure_does_not_prevent_marking_outdated() -> None:
+    decision = PolicyDecision(
+        id=1, repository_id=1, diff_snapshot_id=1, decision="APPROVE", risk="LOW", reasons=["ok"]
+    )
+    ai_review = AIReview(id=1, repository_id=1, diff_snapshot_id=1, status="completed", summary="s")
+    ai_review.findings = []
+    pull_request = PullRequest(
+        id=1, repository_id=1, github_pr_number=9, head_branch="foundations", base_branch="main"
+    )
+    stale_inline = ReviewComment(
+        id=2,
+        repository_id=1,
+        pull_request_id=1,
+        diff_snapshot_id=0,
+        kind="inline",
+        fingerprint="old-fp",
+        github_comment_id=42,
+        github_node_id="PRRC_kwabc123",
+        status="posted",
+        head_sha="sha0",
+    )
+    db = _make_db(
+        decision=decision,
+        ai_review=ai_review,
+        tool_runs=[],
+        pull_request=pull_request,
+        existing_comments={("inline", "old-fp"): stale_inline},
+    )
+    client = _github_client()
+    client.minimize_comment.side_effect = RuntimeError("minimizeComment failed")
+
+    with _patched(), patch("app.checks.service.GitHubClient", return_value=client):
+        run_github_checks_for_snapshot(db, _repository(), _snapshot(github_check_run_id=999))
+
+    assert stale_inline.status == "outdated"
+
+
 def test_start_check_run_is_best_effort_on_malformed_response() -> None:
     db = MagicMock()
     client = MagicMock()
