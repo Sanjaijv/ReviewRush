@@ -298,6 +298,14 @@ human pushing the same commit would.
 - Recorded in the same `AutoFixAttempt` table (`trigger="manual"`,
   `status="committed"` on success, `actor_login` set to whoever checked the
   box) - `trigger="automatic"` is the original behavior above.
+- The resulting commit's own push webhook is intentionally ignored (every
+  bot-authored push is, to avoid an automation loop - see
+  `app.tasks.github_webhook._handle_push`), so a fresh review/check run for
+  it is triggered explicitly instead, right after the commit lands
+  (`app.tasks.review_trigger.trigger_review_for_commit`, the same snapshot-
+  building/check-run/analysis-queueing logic the push handler itself uses).
+  Without this, the branch's required check would keep pointing at the
+  pre-fix commit.
 
 ### Enabling it
 

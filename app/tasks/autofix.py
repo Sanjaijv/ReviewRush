@@ -6,8 +6,9 @@ from app.celery_app import celery_app
 from app.db import SessionLocal
 from app.github.auth import get_installation_access_token
 from app.github.client import GitHubClient
-from app.models import AIFinding, DiffSnapshot, Repository, ReviewComment
+from app.models import AIFinding, DiffSnapshot, PullRequest, Repository, ReviewComment
 from app.tasks._reliability import handle_task_failure
+from app.tasks.review_trigger import trigger_review_for_commit
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,22 @@ def run_manual_fix_task(
                 db, client, repository, diff_snapshot, finding, review_comment, actor_login,
                 current_comment_body,
             )
+            # A direct commit to the reviewed branch never gets its own push
+            # webhook acted on - `_handle_push` intentionally ignores every
+            # bot-authored push, to avoid an automation loop. Without this,
+            # the fix would land with no fresh review, no new check run, and
+            # a required check left pointing at the pre-fix commit.
+            if attempt is not None and attempt.status == "committed" and attempt.commit_sha:
+                pull_request = (
+                    db.get(PullRequest, diff_snapshot.pull_request_id)
+                    if diff_snapshot.pull_request_id is not None
+                    else None
+                )
+                if pull_request is not None:
+                    trigger_review_for_commit(
+                        db, client, repository, pull_request.base_branch,
+                        attempt.commit_sha, pull_request,
+                    )
         return "skipped" if attempt is None else attempt.status
     except Exception as exc:
         logger.exception(
