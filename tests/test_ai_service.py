@@ -176,7 +176,7 @@ def test_both_attempts_invalid_persists_invalid_output_with_no_findings() -> Non
     assert persisted.findings == []
 
 
-def test_model_error_both_attempts_persists_error_status() -> None:
+def test_model_error_is_not_retried_and_persists_error_status() -> None:
     db = _db_with_no_existing_review()
     model = _FakeModel([
         _response(None, error="ollama request timed out"),
@@ -185,9 +185,11 @@ def test_model_error_both_attempts_persists_error_status() -> None:
 
     _run(db, _settings(), model)
 
+    assert len(model.calls) == 1
     persisted: AIReview = db.add.call_args[0][0]
     assert persisted.status == "error"
     assert persisted.decision is None
+    assert persisted.attempt_count == 1
 
 
 def test_unknown_provider_persists_error_without_calling_model() -> None:

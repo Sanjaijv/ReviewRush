@@ -224,6 +224,13 @@ def run_reviewer_pass(
 
         if response.error is not None:
             last_errors = [response.error]
+            # A provider-level timeout or HTTP error cannot be repaired by
+            # asking the model to rewrite its previous output. Retrying here
+            # only sends the repository prompt again (plus a repair turn),
+            # making payload-size failures worse and potentially charging for
+            # a duplicate request. Schema/content validation failures below
+            # still receive the single bounded repair attempt.
+            break
         else:
             output, errors = validate_review_output(
                 response.content, review_prompt.valid_file_paths, changed_files_by_path,

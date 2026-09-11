@@ -393,7 +393,9 @@ def run_github_checks_for_snapshot(
         config_yaml = client.get_file_contents(
             repository.owner, repository.name, REPO_CONFIG_PATH, ref=diff_snapshot.head_sha
         )
-        repo_config = parse_repo_config(config_yaml)
+        repo_config = parse_repo_config(
+            config_yaml, default_auto_fix_enabled=settings.autofix_enabled
+        )
 
         inline_posted_ids: set[int] = set()
         if repo_config.review.post_inline_comments:

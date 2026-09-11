@@ -13,6 +13,26 @@ def test_empty_string_yields_defaults() -> None:
     assert parse_repo_config("   \n") == RepoConfig()
 
 
+def test_missing_config_can_inherit_application_autofix_default() -> None:
+    config = parse_repo_config(None, default_auto_fix_enabled=True)
+    assert config.auto_fix.enabled is True
+
+
+def test_repository_can_opt_out_of_application_autofix_default() -> None:
+    config = parse_repo_config(
+        "auto_fix:\n  enabled: false\n", default_auto_fix_enabled=True
+    )
+    assert config.auto_fix.enabled is False
+
+
+def test_partial_autofix_config_inherits_application_default() -> None:
+    config = parse_repo_config(
+        "auto_fix:\n  maximum_severity: medium\n", default_auto_fix_enabled=True
+    )
+    assert config.auto_fix.enabled is True
+    assert config.auto_fix.maximum_severity == "medium"
+
+
 def test_valid_config_is_parsed() -> None:
     raw = """
 version: 1
@@ -41,8 +61,11 @@ merge:
 
 
 def test_invalid_yaml_fails_closed_to_defaults() -> None:
-    config = parse_repo_config("branches: [this is not: valid: yaml")
+    config = parse_repo_config(
+        "branches: [this is not: valid: yaml", default_auto_fix_enabled=True
+    )
     assert config == RepoConfig()
+    assert config.auto_fix.enabled is False
 
 
 def test_non_mapping_document_fails_closed_to_defaults() -> None:

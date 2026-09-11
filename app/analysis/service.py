@@ -34,6 +34,7 @@ def run_analysis_for_snapshot(
         runner = DockerCliSandboxRunner(
             docker_binary=settings.analysis_docker_binary,
             volume_name=settings.analysis_volume_name,
+            dns_server=settings.analysis_sandbox_dns_server,
         )
 
         return run_analysis_pipeline(

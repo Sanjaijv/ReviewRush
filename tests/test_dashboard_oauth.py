@@ -10,6 +10,7 @@ from app.dashboard.oauth import (
     fetch_accessible_installation_ids,
     fetch_authenticated_user,
     new_state,
+    state_cookie_name,
 )
 
 
@@ -25,6 +26,15 @@ def test_new_state_is_unique_and_url_safe() -> None:
     assert len(a) > 20
 
 
+def test_state_cookie_name_is_stable_and_isolates_login_attempts() -> None:
+    first = state_cookie_name("first-state")
+
+    assert first == state_cookie_name("first-state")
+    assert first != state_cookie_name("second-state")
+    assert first.startswith("rr_oauth_state_")
+    assert len(first) < 64
+
+
 def test_build_authorize_url_includes_client_id_and_state() -> None:
     url = build_authorize_url(_settings(), redirect_uri="https://x/cb", state="s1")
     assert "client_id=client-id" in url
@@ -34,12 +44,24 @@ def test_build_authorize_url_includes_client_id_and_state() -> None:
 
 def test_build_authorize_url_requires_client_id() -> None:
     with pytest.raises(RuntimeError):
-        build_authorize_url(Settings(), redirect_uri="https://x/cb", state="s1")
+        build_authorize_url(
+            Settings(github_oauth_client_id="", _env_file=None),
+            redirect_uri="https://x/cb",
+            state="s1",
+        )
 
 
 def test_exchange_code_for_token_requires_credentials() -> None:
     with pytest.raises(RuntimeError):
-        exchange_code_for_token(Settings(), code="c", redirect_uri="https://x/cb")
+        exchange_code_for_token(
+            Settings(
+                github_oauth_client_id="",
+                github_oauth_client_secret="",
+                _env_file=None,
+            ),
+            code="c",
+            redirect_uri="https://x/cb",
+        )
 
 
 def test_exchange_code_for_token_returns_access_token() -> None:

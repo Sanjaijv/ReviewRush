@@ -1,6 +1,132 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-archivo);
+  --font-sans: var(--font-source-sans);
+  --font-mono: var(--font-jetbrains);
+
+  --color-ink-900: var(--ink-900);
+  --color-ink-700: var(--ink-700);
+  --color-ink-500: var(--ink-500);
+  --color-paper-0: var(--paper-0);
+  --color-surface-1: var(--surface-1);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-risk-critical: var(--risk-critical);
+
+  --spacing-page: 22px;
+  --spacing-section: 44px;
+}
+
+@layer base {
+  :root {
+    --ink-900: #171b22;
+    --ink-700: #333b46;
+    --ink-500: #57626f;
+    --paper-0: #f3f5f4;
+    --surface-1: #ffffff;
+    --line: #dbe0e0;
+    --accent: #a3721f;
+    --good: #276a45;
+    --warn: #b5590f;
+    --bad: #a5332a;
+    --risk-critical: #7a2530;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink-900: #eef0f2;
+      --ink-700: #cbd1d8;
+      --ink-500: #8d97a1;
+      --paper-0: #14171c;
+      --surface-1: #1b1f26;
+      --line: #2b313a;
+      --accent: #d6a75c;
+      --good: #6fbf8f;
+      --warn: #e0975a;
+      --bad: #e08a83;
+      --risk-critical: #e4a2a9;
+      color-scheme: dark;
+    }
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--line);
+  }
+
+  html {
+    min-width: 320px;
+    min-height: 100%;
+    background: var(--paper-0);
+  }
+
+  body {
+    min-height: 100%;
+    background: var(--paper-0);
+    color: var(--ink-900);
+    font-family: var(--font-source-sans), "Source Sans 3", sans-serif;
+    font-size: 15.5px;
+    line-height: 1.45;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button,
+  a,
+  summary,
+  select,
+  input[type="checkbox"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+}
+
+@layer components {
+  .rr-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-1);
+  }
+
+  .rr-eyebrow {
+    color: var(--ink-500);
+    font-family: var(--font-jetbrains), monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .rr-focus-ring:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .rr-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .rr-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink-500) 36%, transparent);
+    background-clip: padding-box;
+  }
 }

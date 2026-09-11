@@ -1,21 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo, JetBrains_Mono, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
-import { Header } from "@/components/Header";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
+  weight: ["600", "700", "800"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
   subsets: ["latin"],
+  weight: ["400", "600", "700"],
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+  weight: ["500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "ReviewRush Dashboard",
+  title: "ReviewRush · Code review operations",
   description: "Review runs, configuration, and audit history for ReviewRush-managed repositories.",
 };
 
@@ -23,12 +30,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${archivo.variable} ${sourceSans.variable} ${jetbrains.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
+      <body className="min-h-full bg-paper-0 text-ink-900">
         <AuthProvider>
-          <Header />
-          <main className="flex-1">{children}</main>
+          <main className="min-h-screen">{children}</main>
         </AuthProvider>
       </body>
     </html>

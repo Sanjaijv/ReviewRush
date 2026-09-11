@@ -1,0 +1,568 @@
+<title>ReviewRush Dashboard Spec</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink-900: #171b22;
+    --ink-700: #333b46;
+    --ink-500: #57626f;
+    --ink-300: #9aa4ad;
+    --paper-0: #f3f5f4;
+    --surface-1: #ffffff;
+    --surface-2: #eceeec;
+    --line: #dbe0e0;
+    --line-strong: #c3cac9;
+    --accent: #a3721f;
+    --accent-ink: #6e4d15;
+    --accent-soft: #f1e2c4;
+    --good: #276a45;
+    --good-soft: #dcefe1;
+    --warn: #b5590f;
+    --warn-soft: #f7e2cd;
+    --bad: #a5332a;
+    --bad-soft: #f6dcda;
+    --risk-critical: #7a2530;
+    --shadow: 0 1px 2px rgba(23,27,34,0.06), 0 8px 24px -12px rgba(23,27,34,0.18);
+    --radius-s: 4px;
+    --radius-m: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink-900: #eef0f2;
+      --ink-700: #cbd1d8;
+      --ink-500: #8d97a1;
+      --ink-300: #565f68;
+      --paper-0: #14171c;
+      --surface-1: #1b1f26;
+      --surface-2: #21262e;
+      --line: #2b313a;
+      --line-strong: #3a4149;
+      --accent: #d6a75c;
+      --accent-ink: #f0cf94;
+      --accent-soft: #3a3020;
+      --good: #6fbf8f;
+      --good-soft: #1c3327;
+      --warn: #e0975a;
+      --warn-soft: #3a2a17;
+      --bad: #e08a83;
+      --bad-soft: #3a201e;
+      --risk-critical: #e4a2a9;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink-900: #eef0f2;
+    --ink-700: #cbd1d8;
+    --ink-500: #8d97a1;
+    --ink-300: #565f68;
+    --paper-0: #14171c;
+    --surface-1: #1b1f26;
+    --surface-2: #21262e;
+    --line: #2b313a;
+    --line-strong: #3a4149;
+    --accent: #d6a75c;
+    --accent-ink: #f0cf94;
+    --accent-soft: #3a3020;
+    --good: #6fbf8f;
+    --good-soft: #1c3327;
+    --warn: #e0975a;
+    --warn-soft: #3a2a17;
+    --bad: #e08a83;
+    --bad-soft: #3a201e;
+    --risk-critical: #e4a2a9;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper-0);
+    color: var(--ink-900);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.55;
+  }
+  h1, h2, h3, h4 { font-family: "Archivo", ui-sans-serif, system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.88em; }
+
+  .shell { display: grid; grid-template-columns: 232px minmax(0,1fr); max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .toc { display: none; } }
+
+  .toc {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+    padding: 32px 18px 40px 24px; border-right: 1px solid var(--line);
+  }
+  .toc .mark { font-family: "Archivo"; font-weight: 800; font-size: 1.05rem; letter-spacing: -0.01em; margin-bottom: 2px; }
+  .toc .mark small { display: block; font-family: "JetBrains Mono"; font-weight: 500; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-300); margin-top: 3px; }
+  .toc-group { margin-top: 26px; }
+  .toc-group h5 { font-family: "JetBrains Mono"; font-size: 0.66rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-300); margin: 0 0 8px; font-weight: 600; }
+  .toc a { display: block; font-size: 0.86rem; color: var(--ink-500); text-decoration: none; padding: 4px 0; border-left: 2px solid transparent; padding-left: 9px; margin-left: -1px; }
+  .toc a:hover, .toc a:focus-visible { color: var(--accent-ink); border-left-color: var(--accent); outline: none; }
+
+  main { padding: 56px 44px 100px; min-width: 0; }
+  @media (max-width: 640px) { main { padding: 40px 20px 80px; } }
+
+  .intro { max-width: 640px; margin-bottom: 64px; }
+  .eyebrow { font-family: "JetBrains Mono"; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; margin-bottom: 14px; }
+  .intro h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.015em; }
+  .intro p.lede { margin: 18px 0 0; color: var(--ink-500); font-size: 1.05rem; max-width: 58ch; }
+  .meta-row { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .meta-row div { font-size: 0.78rem; }
+  .meta-row dt { font-family: "JetBrains Mono"; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-300); font-size: 0.65rem; margin: 0 0 3px; }
+  .meta-row dd { margin: 0; color: var(--ink-700); font-weight: 600; }
+
+  section.spec { padding-top: 74px; margin-top: -18px; border-top: 1px solid var(--line); max-width: 900px; }
+  section.spec:first-of-type { border-top: none; }
+  .spec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .spec-head h2 { font-size: 1.5rem; font-weight: 700; }
+  .spec-head .route { font-family: "JetBrains Mono"; font-size: 0.78rem; color: var(--ink-500); background: var(--surface-2); padding: 3px 9px; border-radius: var(--radius-s); white-space: nowrap; }
+  .spec-dek { color: var(--ink-500); font-size: 0.95rem; max-width: 66ch; margin: 10px 0 30px; }
+
+  /* wireframe diagrams */
+  .wf { border: 1px solid var(--line-strong); border-radius: var(--radius-m); background: var(--surface-1); padding: 14px; box-shadow: var(--shadow); margin-bottom: 22px; }
+  .wf-grid { display: grid; gap: 8px; }
+  .wf-box {
+    border: 1.5px dashed var(--line-strong); border-radius: var(--radius-s);
+    background: var(--surface-2); padding: 10px 12px; position: relative; min-height: 40px;
+    display: flex; align-items: flex-start; justify-content: flex-start;
+  }
+  .wf-box > .wf-label {
+    font-family: "JetBrains Mono"; font-size: 0.65rem; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-500); font-weight: 600;
+  }
+  .wf-box.accent { background: var(--accent-soft); border-color: var(--accent); }
+  .wf-box.accent .wf-label { color: var(--accent-ink); }
+  .wf-box .wf-note { display: block; font-family: "Source Sans 3"; text-transform: none; letter-spacing: normal; font-size: 0.78rem; color: var(--ink-500); font-weight: 400; margin-top: 4px; }
+  .wf-row { display: flex; gap: 8px; }
+  .wf-row > .wf-box { flex: 1; }
+
+  /* pills / chips reused inside wireframes to show real states */
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-family: "JetBrains Mono"; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em; padding: 2px 7px; border-radius: 100px; text-transform: uppercase; }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.neutral { background: var(--surface-2); color: var(--ink-500); border: 1px solid var(--line-strong); }
+  .pill.accent { background: var(--accent-soft); color: var(--accent-ink); }
+
+  h3.sub { font-size: 0.95rem; font-weight: 700; margin: 26px 0 10px; }
+  h3.sub .mono-tag { font-family: "JetBrains Mono"; font-size: 0.68rem; color: var(--ink-300); font-weight: 500; margin-left: 8px; }
+
+  ul.notes { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 7px; }
+  ul.notes li { position: relative; padding-left: 16px; font-size: 0.9rem; color: var(--ink-700); }
+  ul.notes li::before { content: "—"; position: absolute; left: 0; color: var(--ink-300); }
+  ul.notes li b { color: var(--ink-900); font-weight: 600; }
+
+  table.spec-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 6px 0 4px; }
+  table.spec-table th { text-align: left; font-family: "JetBrains Mono"; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-300); font-weight: 600; padding: 0 10px 8px 0; border-bottom: 1px solid var(--line-strong); }
+  table.spec-table td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-700); }
+  table.spec-table tr:last-child td { border-bottom: none; }
+  .tbl-scroll { overflow-x: auto; }
+
+  .states-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+
+  /* sitemap tree */
+  .tree { font-family: "JetBrains Mono"; font-size: 0.85rem; line-height: 2; }
+  .tree .l1 { color: var(--ink-900); font-weight: 600; }
+  .tree .l2 { padding-left: 22px; color: var(--ink-700); }
+  .tree .l3 { padding-left: 44px; color: var(--ink-500); }
+  .tree .tag { font-family: "Source Sans 3"; font-size: 0.72rem; color: var(--ink-300); margin-left: 8px; }
+
+  /* token/swatch section */
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; margin: 16px 0 30px; }
+  .swatch { border-radius: var(--radius-m); overflow: hidden; border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
+  .swatch .chip { height: 62px; }
+  .swatch .info { background: var(--surface-1); padding: 9px 11px; }
+  .swatch .info .name { font-family: "JetBrains Mono"; font-size: 0.72rem; font-weight: 600; }
+  .swatch .info .hex { font-family: "JetBrains Mono"; font-size: 0.7rem; color: var(--ink-500); }
+
+  .type-scale div { display: flex; align-items: baseline; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .type-scale div:last-child { border-bottom: none; }
+  .type-scale .tlabel { font-family: "JetBrains Mono"; font-size: 0.68rem; color: var(--ink-300); width: 128px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .type-scale .tsample { font-family: "Archivo"; font-weight: 700; }
+
+  .spacing-scale { display: flex; align-items: flex-end; gap: 14px; margin: 14px 0 6px; flex-wrap: wrap; }
+  .spacing-scale div { text-align: center; }
+  .spacing-scale .bar { background: var(--accent); border-radius: 2px; }
+  .spacing-scale .slabel { font-family: "JetBrains Mono"; font-size: 0.65rem; color: var(--ink-500); margin-top: 6px; }
+
+  footer.end { max-width: 900px; margin-top: 70px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--ink-300); font-size: 0.78rem; font-family: "JetBrains Mono"; }
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="mark">ReviewRush<small>Dashboard spec — for Figma</small></div>
+    <div class="toc-group">
+      <h5>Foundations</h5>
+      <a href="#sitemap">Information architecture</a>
+      <a href="#shell">Global app shell</a>
+    </div>
+    <div class="toc-group">
+      <h5>Screens</h5>
+      <a href="#login">Sign in</a>
+      <a href="#repos">Repositories</a>
+      <a href="#overview">Repo → Overview</a>
+      <a href="#runs">Repo → Runs</a>
+      <a href="#run-detail">Run detail</a>
+      <a href="#config">Repo → Config</a>
+      <a href="#ops">Repo → Task failures &amp; Audit log</a>
+      <a href="#org">Organization settings</a>
+      <a href="#eval">Evaluation admin</a>
+      <a href="#finetune">Fine-tune admin</a>
+    </div>
+    <div class="toc-group">
+      <h5>Build kit</h5>
+      <a href="#components">Component inventory</a>
+      <a href="#tokens">Design tokens</a>
+    </div>
+  </nav>
+
+  <main>
+    <header class="intro">
+      <div class="eyebrow">Design spec · v1</div>
+      <h1>ReviewRush Dashboard</h1>
+      <p class="lede">Information architecture, screen-by-screen wireframes, component states, and a starter token kit for building the ReviewRush web dashboard in Figma. ReviewRush is an AI-assisted GitHub code-review bot; this dashboard is the operator-facing surface for the org that installed it — not the PR itself, which stays on GitHub.</p>
+      <dl class="meta-row">
+        <div><dt>Screens</dt><dd>10</dd></div>
+        <div><dt>Source</dt><dd>FastAPI dashboard API, /api/v1/*</dd></div>
+        <div><dt>Auth</dt><dd>GitHub OAuth, session cookie</dd></div>
+        <div><dt>Data model</dt><dd>1 org ↔ 1 GitHub installation</dd></div>
+      </dl>
+    </header>
+
+    <section class="spec" id="sitemap">
+      <div class="spec-head"><h2>Information architecture</h2></div>
+      <p class="spec-dek">Everything hangs off the installation the signed-in user picks. A repository is where the daily work happens; organization, evaluation, and fine-tuning are admin-only side rooms.</p>
+      <div class="wf tree">
+        <div class="l1">/ — Sign in <span class="tag">logged out</span></div>
+        <div class="l1">/ — Repositories <span class="tag">installation switcher · repo grid</span></div>
+        <div class="l2">/repos/:id — Overview <span class="tag">metrics · recent runs · alerts</span></div>
+        <div class="l2">/repos/:id/runs — Runs <span class="tag">history table</span></div>
+        <div class="l3">/repos/:id/runs/:sha — Run detail <span class="tag">findings · policy · checks</span></div>
+        <div class="l2">/repos/:id/config — Config <span class="tag">.reviewrush.yml editor + versions</span></div>
+        <div class="l2">/repos/:id/ops — Task failures &amp; Audit log <span class="tag">two-pane</span></div>
+        <div class="l1">/org — Organization settings <span class="tag">org admin</span></div>
+        <div class="l1">/admin/evaluation — Evaluation admin <span class="tag">token-gated</span></div>
+        <div class="l1">/admin/finetune — Fine-tune admin <span class="tag">token-gated</span></div>
+      </div>
+      <ul class="notes">
+        <li><b>One org per installation.</b> There's no cross-org switcher inside a workspace — switching installations in the header is the only way to move between orgs.</li>
+        <li><b>Evaluation and fine-tune admin are exceptional surfaces</b>, gated by a separate admin token on top of login — most orgs never see them turned on. Nest them under a low-emphasis "Admin" entry, not the primary nav.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="shell">
+      <div class="spec-head"><h2>Global app shell</h2><span class="route mono">persistent</span></div>
+      <p class="spec-dek">Present on every screen except Sign in. A single-row header: no left sidebar — the repo workspace itself uses in-page tabs, so the shell stays thin.</p>
+      <div class="wf">
+        <div class="wf-row">
+          <div class="wf-box accent" style="flex:0 0 150px;"><span class="wf-label">Wordmark</span></div>
+          <div class="wf-box" style="flex:0 0 190px;"><span class="wf-label">Installation switcher<span class="wf-note">"acme-corp ▾" — dropdown of every installation the user belongs to</span></span></div>
+          <div class="wf-box" style="flex:1;"></div>
+          <div class="wf-box" style="flex:0 0 90px;"><span class="wf-label">Admin<span class="wf-note">only if eval/finetune enabled</span></span></div>
+          <div class="wf-box" style="flex:0 0 150px;"><span class="wf-label">Avatar menu<span class="wf-note">login · org settings · sign out</span></span></div>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Installation switcher is the top-level branch point in the IA — changing it re-scopes the whole app to a different repo list, silently drops any open repo workspace.</li>
+        <li>No global search in v1 — findings and runs are only ever browsed inside one repository's workspace.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="login">
+      <div class="spec-head"><h2>Sign in</h2><span class="route mono">GET /api/v1/dashboard/auth/login</span></div>
+      <p class="spec-dek">One decision, one button. The whole session is GitHub's own OAuth — there is no password, no separate signup.</p>
+      <div class="wf">
+        <div class="wf-grid" style="grid-template-columns:1fr; max-width:360px; margin:0 auto;">
+          <div class="wf-box accent" style="justify-content:center; text-align:center; flex-direction:column; min-height:60px;"><span class="wf-label">Wordmark + one-line pitch</span></div>
+          <div class="wf-box" style="justify-content:center;"><span class="wf-label">Continue with GitHub</span></div>
+        </div>
+      </div>
+      <ul class="notes">
+        <li><b>Loading:</b> a redirect round-trip through GitHub — show a brief full-page spinner on return, not a skeleton (there's nothing to skeleton yet).</li>
+        <li><b>Error state:</b> OAuth exchange can fail (revoked app, expired code) — land back here with an inline banner, plain language: "Something went wrong signing you in. Try again."</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="repos">
+      <div class="spec-head"><h2>Repositories</h2><span class="route mono">GET /installations/:id/repositories</span></div>
+      <p class="spec-dek">Landing screen after login. A grid of every repo the current installation covers, each carrying its most recent run status so the page doubles as a fleet-health view.</p>
+      <div class="wf">
+        <div class="wf-grid" style="grid-template-columns:repeat(3,1fr);">
+          <div class="wf-box" style="flex-direction:column; gap:6px;">
+            <span class="wf-label">reviewrush-test<span class="wf-note">main · last run 4m ago</span></span>
+            <span class="pill good">approved</span>
+          </div>
+          <div class="wf-box" style="flex-direction:column; gap:6px;">
+            <span class="wf-label">payments-api<span class="wf-note">main · last run 1h ago</span></span>
+            <span class="pill bad">blocked</span>
+          </div>
+          <div class="wf-box" style="flex-direction:column; gap:6px;">
+            <span class="wf-label">infra-terraform<span class="wf-note">disconnected 3d ago</span></span>
+            <span class="pill neutral">inactive</span>
+          </div>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Card = repo full_name, default branch, most recent run's policy pill (<code>approve</code>/<code>human_review</code>/<code>block</code>), relative timestamp.</li>
+        <li><b>Disconnected</b> repos (installation revoked or manually disconnected) render dimmed, at the end of the grid, with a neutral "inactive" pill instead of a policy pill.</li>
+        <li><b>Empty state:</b> installation has zero repos granted — illustration-free, one line: "No repositories yet. Grant this app access from GitHub." + a link out to the GitHub installation settings.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="overview">
+      <div class="spec-head"><h2>Repository → Overview</h2><span class="route mono">GET /repositories/:id/metrics</span></div>
+      <p class="spec-dek">First tab on entering a repo. Answers "is this repo healthy" before the operator drills into any one run.</p>
+      <div class="wf">
+        <div class="wf-box accent" style="margin-bottom:8px;"><span class="wf-label">⚠ 2 unresolved task failures<span class="wf-note">dismissible banner, only rendered when count &gt; 0 — links to the Task failures pane</span></span></div>
+        <div class="wf-row" style="margin-bottom:8px;">
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Runs (30d)<span class="wf-note">big number</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Approve rate<span class="wf-note">big number, %</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Auto-fixes shipped<span class="wf-note">big number</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Median review time<span class="wf-note">big number, duration</span></span></div>
+        </div>
+        <div class="wf-box"><span class="wf-label">Recent runs<span class="wf-note">last 5 rows of the Runs table, "View all →" to the Runs tab</span></span></div>
+      </div>
+      <ul class="notes">
+        <li>Metric tiles come back as one untyped JSON blob from the backend today — treat the four above as the ones worth surfacing as tiles; render anything else the payload adds as a low-emphasis "more metrics" expandable, not a fifth tile, so the layout doesn't reflow every time a metric is added server-side.</li>
+        <li><b>Loading:</b> tiles skeleton independently of the recent-runs list — they come from the same request but shouldn't block each other visually.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="runs">
+      <div class="spec-head"><h2>Repository → Runs</h2><span class="route mono">GET /repositories/:id/runs</span></div>
+      <p class="spec-dek">Every reviewed push, newest first. One run = one <code>DiffSnapshot</code>, i.e. one head commit that went through the pipeline.</p>
+      <div class="tbl-scroll">
+        <table class="spec-table">
+          <thead><tr><th>Commit</th><th>Files</th><th>Lines</th><th>Status</th><th>When</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">a1c4f2e</td><td>6</td><td>+142 −38</td><td><span class="pill good">complete</span></td><td>4 minutes ago</td><td class="mono">View · Rerun</td></tr>
+            <tr><td class="mono">9de001b</td><td>21</td><td>+880 −12</td><td><span class="pill warn">oversized</span></td><td>1 hour ago</td><td class="mono">View</td></tr>
+            <tr><td class="mono">55f3aa9</td><td>3</td><td>+9 −4</td><td><span class="pill neutral">cancelled</span></td><td>yesterday</td><td class="mono">View</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="states-row">
+        <span class="pill good">complete</span><span class="pill warn">oversized</span><span class="pill neutral">cancelled</span><span class="pill accent">queued</span>
+      </div>
+      <ul class="notes">
+        <li><b>Row actions</b> are conditional: <code>Rerun</code> only on a completed run; <code>Cancel</code> only while queued/running (a live row, poll or socket-update its status pill rather than requiring a manual refresh).</li>
+        <li><b>oversized</b> means the diff exceeded configured size limits and skipped AI review — style it as a warning, not a failure, and its row's "View" still opens (to show the deterministic-checks-only result).</li>
+        <li>Filter bar above the table: status (multi-select of the four pills) + a date range. No free-text search in v1 — commit SHAs are the only identifier and people paste them directly into the URL.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="run-detail">
+      <div class="spec-head"><h2>Run detail</h2><span class="route mono">GET /repositories/:id/runs/:sha</span></div>
+      <p class="spec-dek">The densest screen in the product. One head commit's full trail: what the deterministic scanners found, what the AI found, and what the policy engine decided to do about it.</p>
+      <div class="wf">
+        <div class="wf-box" style="margin-bottom:8px;"><span class="wf-label">a1c4f2e ← 7b90ee1<span class="wf-note">head ← base, branch name, PR link out to GitHub</span></span></div>
+        <div class="wf-row" style="margin-bottom:8px;">
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">semgrep <span class="pill good">pass</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">gitleaks <span class="pill good">pass</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">dependency scan <span class="pill bad">fail</span></span></div>
+        </div>
+        <div class="wf-box" style="flex-direction:column; align-items:stretch; gap:10px; margin-bottom:8px;">
+          <span class="wf-label">Findings (AI review)</span>
+          <div class="wf-row">
+            <div class="wf-box neutral" style="flex-direction:column; align-items:flex-start; gap:5px;">
+              <span class="pill bad">critical</span>
+              <span class="wf-note" style="margin:0;">security · app/auth/session.py:42 — Session token compared with <code>==</code>, not constant-time</span>
+              <span class="pill accent">fix committed</span>
+            </div>
+          </div>
+          <div class="wf-row">
+            <div class="wf-box neutral" style="flex-direction:column; align-items:flex-start; gap:5px;">
+              <span class="pill warn">medium</span>
+              <span class="wf-note" style="margin:0;">missing_tests · app/billing/invoice.py:118 — New branch has no covering test</span>
+              <span class="pill neutral">👍 👎</span>
+            </div>
+          </div>
+        </div>
+        <div class="wf-box accent"><span class="wf-label">Policy: HUMAN_REVIEW<span class="wf-note">risk: high — reasons: 1 critical security finding, dependency scan failed</span></span></div>
+      </div>
+      <h3 class="sub">Finding card anatomy</h3>
+      <ul class="notes">
+        <li><b>Severity pill</b> — <code>critical</code>/<code>high</code>/<code>medium</code>/<code>low</code>, color-coded (critical gets the darkest, most saturated red — it should read as more urgent than plain <code>high</code>, not the same red).</li>
+        <li><b>Category tag</b> — one of <code>security</code>, <code>correctness</code>, <code>reliability</code>, <code>performance</code>, <code>maintainability</code>, <code>compatibility</code>, <code>error_handling</code>, <code>concurrency</code>, <code>missing_tests</code>. Render as a plain mono label, not a colored pill — color is reserved for severity so the two scales don't compete.</li>
+        <li><b>file:line</b>, title, and an expandable body for evidence/recommendation.</li>
+        <li><b>Autofix status</b>, only if an attempt exists: <span class="pill good">fix opened</span> / <span class="pill accent">fix committed</span> (manual, direct-to-branch) / <span class="pill neutral">not applicable</span> / <span class="pill bad">verification failed</span>. Security findings never get an automatic attempt — those instead show a "Fix available — apply from the PR checkbox" hint, since that action lives on GitHub's own comment thread, not here.</li>
+        <li><b>Feedback</b> — thumbs up/down, posts to the per-finding feedback endpoint; once voted, replace the two buttons with a small "Marked helpful" / "Marked incorrect" line rather than leaving both buttons visibly clickable.</li>
+      </ul>
+      <h3 class="sub">Policy decision panel</h3>
+      <ul class="notes">
+        <li>Decision is one of three values, and the copy should say what happens next, not just the enum: <span class="pill good">APPROVE</span> "Nothing blocking — safe to merge." <span class="pill accent">HUMAN_REVIEW</span> "Needs a person to look before merging." <span class="pill bad">BLOCK</span> "Merge is blocked until this is resolved."</li>
+        <li>Risk (<code>low/medium/high/critical</code>) is a separate line from the decision itself — a HUMAN_REVIEW at critical risk should look distinctly more urgent than one at low risk, even though the decision pill is identical.</li>
+        <li>Reasons render as a short bullet list underneath, taken verbatim from the backend's <code>reasons[]</code> — these are the actual sentence fragments a reviewer will read, don't summarize them further.</li>
+        <li>A collapsed "Merge attempts" log sits at the bottom for repos with auto-merge on — mostly empty in practice, so keep it collapsed by default.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="config">
+      <div class="spec-head"><h2>Repository → Config</h2><span class="route mono">GET/PUT /repositories/:id/config</span></div>
+      <p class="spec-dek">The repo's <code>.reviewrush.yml</code>, editable from the dashboard as a versioned override layered on top of the file actually committed to the repo.</p>
+      <div class="wf">
+        <div class="wf-row">
+          <div class="wf-box" style="flex:2; flex-direction:column; align-items:stretch; min-height:180px;">
+            <span class="wf-label">YAML editor<span class="wf-note">monospace, line numbers, syntax highlight</span></span>
+          </div>
+          <div class="wf-box" style="flex:1; flex-direction:column; align-items:stretch; gap:8px;">
+            <span class="wf-label">Version history</span>
+            <span class="wf-note">v4 · sanjaijv · today</span>
+            <span class="wf-note">v3 · sanjaijv · 2 weeks ago</span>
+            <span class="wf-note">v2 · bot-migration · 3 weeks ago</span>
+          </div>
+        </div>
+      </div>
+      <ul class="notes">
+        <li><b>Source badge</b> at the top of the editor: <span class="pill accent">dashboard override</span> vs <span class="pill neutral">repository file</span> — makes it obvious whether edits here actually take effect (a repo committing its own <code>.reviewrush.yml</code> can take precedence; say so plainly if it does).</li>
+        <li>Save creates a new version rather than editing in place — the version list is append-only, each entry expandable to a read-only diff against the previous version. No delete/rollback action for a version — only "restore" (copies an old version's content into the editor as a new draft, doesn't rewrite history).</li>
+        <li><b>Save button</b> disabled until the YAML parses; show inline parse errors at the offending line rather than a generic toast.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="ops">
+      <div class="spec-head"><h2>Repository → Task failures &amp; Audit log</h2><span class="route mono">GET /repositories/:id/task-failures · /audit-log</span></div>
+      <p class="spec-dek">Two operational panes, tabbed together since both are "what happened, and did a human deal with it" logs — task failures need action, the audit log is read-only history.</p>
+      <div class="wf">
+        <div class="wf-box" style="flex-direction:column; align-items:stretch; gap:8px; margin-bottom:8px;">
+          <span class="wf-label">Task failures <span class="pill bad" style="margin-left:6px;">2 unresolved</span></span>
+          <span class="wf-note">run_analysis_pipeline_task · ConnectionError · retried 3× · 12m ago — <b>Resolve</b></span>
+        </div>
+        <div class="wf-box" style="flex-direction:column; align-items:stretch; gap:6px;">
+          <span class="wf-label">Audit log</span>
+          <span class="wf-note mono">policy.decided · diff_snapshot #881 · system · 4m ago</span>
+          <span class="wf-note mono">repository.config_updated · v4 · sanjaijv · 1h ago</span>
+          <span class="wf-note mono">task_failure.resolved · #12 · sanjaijv · 2h ago</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li><b>Task failures</b> list only unresolved ones by default, toggle to "show resolved" — each row's Resolve action asks for no confirmation (it's marking-as-seen, not undoing anything), just moves the row out of the unresolved count immediately.</li>
+        <li><b>Audit log</b> is append-only and dense — every row is <code>actor · action · target · time</code>, monospace, with a chevron to expand the raw metadata JSON. This is the one place in the product where raw JSON is an acceptable end state, not a placeholder for missing design.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="org">
+      <div class="spec-head"><h2>Organization settings</h2><span class="route mono">GET/PUT /organizations/:id</span></div>
+      <p class="spec-dek">One page per installation's org record: identity, org-wide settings, and the two irreversible actions (export, delete) kept visually separate from everything else.</p>
+      <div class="wf">
+        <div class="wf-box" style="margin-bottom:8px;"><span class="wf-label">acme-corp<span class="wf-note">GitHub org · installation #4821 · plan/tier if applicable</span></span></div>
+        <div class="wf-box" style="margin-bottom:8px; flex-direction:column; align-items:stretch;"><span class="wf-label">Settings form<span class="wf-note">org-wide defaults layered under each repo's own .reviewrush.yml</span></span></div>
+        <div class="wf-box" style="border-color:var(--bad); background:var(--bad-soft);"><span class="wf-label" style="color:var(--bad);">Danger zone<span class="wf-note" style="color:var(--ink-500);">Export all data (async, emails a download link) · Delete all data (typed-confirmation required)</span></span></div>
+      </div>
+      <ul class="notes">
+        <li>This screen is admin-only — hide its nav entry entirely for non-admin members rather than showing it disabled (nothing here is useful to see and not use).</li>
+        <li>Delete-data requires typing the org's name to confirm, same pattern as GitHub's own repo-delete flow — this audience will recognize it immediately.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="eval">
+      <div class="spec-head"><h2>Evaluation admin</h2><span class="route mono">/admin/evaluation · token-gated</span></div>
+      <p class="spec-dek">Benchmarks the AI reviewer itself against a labeled dataset. Used rarely, by whoever owns model quality — treat as a utility screen, not a polished daily surface.</p>
+      <div class="wf">
+        <div class="wf-row" style="margin-bottom:8px;">
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Dataset versions<span class="wf-note">build new · list past</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Active promotion<span class="wf-note">which model/prompt version is live</span></span></div>
+        </div>
+        <div class="tbl-scroll">
+          <table class="spec-table">
+            <thead><tr><th>Run</th><th>Dataset</th><th>Precision</th><th>Recall</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">eval-run-014</td><td>v6</td><td>0.83</td><td>0.71</td><td class="mono">Promote</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Every action here (build dataset, run benchmark, promote) is a long-running job — represent each as a row with a status pill (<span class="pill accent">running</span>/<span class="pill good">done</span>/<span class="pill bad">failed</span>), never a blocking spinner over the whole page.</li>
+        <li>"Promote" is the one consequential action on this screen — it changes what real users see — so it's the only button styled with the accent color; everything else here is neutral/utility styling.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="finetune">
+      <div class="spec-head"><h2>Fine-tune admin</h2><span class="route mono">/admin/finetune · token-gated</span></div>
+      <p class="spec-dek">Manages custom model training jobs end to end: kick off a job, benchmark the result against the baseline, and roll back if a shadow-deployed candidate underperforms.</p>
+      <div class="wf">
+        <div class="wf-box" style="margin-bottom:8px; flex-direction:column; align-items:stretch; gap:6px;">
+          <span class="wf-label">Jobs</span>
+          <span class="wf-note mono">job-2026-09-01 · qwen2.5-coder:7b · lora · <span class="pill good">complete</span></span>
+          <span class="wf-note mono">job-2026-08-14 · qwen2.5-coder:7b · lora · <span class="pill bad">failed</span></span>
+        </div>
+        <div class="wf-row">
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Compare<span class="wf-note">baseline vs candidate, metric deltas side by side</span></span></div>
+          <div class="wf-box" style="flex-direction:column;"><span class="wf-label">Shadow-eval results<span class="wf-note">candidate scored against live traffic, not yet promoted</span></span></div>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>A job detail view shows its training log tail + resulting metrics once complete — same "row with status pill, no page-blocking spinner" pattern as Evaluation admin.</li>
+        <li><b>Rollback</b> is a single, clearly-labeled destructive-toned button (uses the <code>bad</code> token, not accent) — it reverts the live model to the previous promotion, so it earns the same visual weight as Delete-data on the Organization screen.</li>
+      </ul>
+    </section>
+
+    <section class="spec" id="components">
+      <div class="spec-head"><h2>Component inventory</h2></div>
+      <p class="spec-dek">Build these once as shared Figma components — every screen above is assembled from this set plus layout.</p>
+      <div class="tbl-scroll">
+        <table class="spec-table">
+          <thead><tr><th>Component</th><th>Variants / states</th><th>Used on</th></tr></thead>
+          <tbody>
+            <tr><td>Status pill</td><td>good · warn · bad · neutral · accent; each with a label slot</td><td>Everywhere — run status, policy decision, severity, autofix status, job status</td></tr>
+            <tr><td>Metric tile</td><td>default · loading (skeleton) · unavailable</td><td>Overview</td></tr>
+            <tr><td>Finding card</td><td>collapsed · expanded · with/without autofix pill · voted/unvoted feedback</td><td>Run detail</td></tr>
+            <tr><td>Data table row</td><td>default · hover · disabled action · live-updating (queued run)</td><td>Runs, Task failures, Eval runs, Fine-tune jobs</td></tr>
+            <tr><td>Danger action block</td><td>default · confirm-typed · in-progress</td><td>Organization, Fine-tune rollback</td></tr>
+            <tr><td>Alert banner</td><td>info (accent) · warning · error; dismissible or persistent</td><td>Overview, Config parse errors</td></tr>
+            <tr><td>Code/YAML editor</td><td>editable · read-only diff (version restore)</td><td>Config</td></tr>
+            <tr><td>Installation switcher</td><td>1 installation (no dropdown chevron) · multiple</td><td>Global shell</td></tr>
+            <tr><td>Empty state</td><td>no repos · no runs yet · no findings on a clean run</td><td>Repositories, Runs, Run detail</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="spec" id="tokens">
+      <div class="spec-head"><h2>Design tokens</h2></div>
+      <p class="spec-dek">Starter palette and type scale — bring these in as Figma styles/variables before building screens, so every wireframe above maps directly onto real components.</p>
+
+      <h3 class="sub">Color</h3>
+      <div class="swatch-grid">
+        <div class="swatch"><div class="chip" style="background:var(--ink-900);"></div><div class="info"><div class="name">ink/900</div><div class="hex">#171b22</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--ink-500);"></div><div class="info"><div class="name">ink/500</div><div class="hex">#57626f</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--paper-0); border-bottom:1px solid var(--line);"></div><div class="info"><div class="name">paper/0</div><div class="hex">#f3f5f4</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--accent);"></div><div class="info"><div class="name">accent</div><div class="hex">#a3721f</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--good);"></div><div class="info"><div class="name">good</div><div class="hex">#276a45</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--warn);"></div><div class="info"><div class="name">warn</div><div class="hex">#b5590f</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--bad);"></div><div class="info"><div class="name">bad</div><div class="hex">#a5332a</div></div></div>
+        <div class="swatch"><div class="chip" style="background:var(--risk-critical);"></div><div class="info"><div class="name">risk/critical</div><div class="hex">#7a2530</div></div></div>
+      </div>
+      <ul class="notes">
+        <li>The accent (ochre) is reserved for interactive/brand moments — installation switcher, primary buttons, active states. It never doubles as a severity or status color, which stay in the good/warn/bad/risk-critical set above.</li>
+        <li>Every token has a dark-mode pairing already defined (used live on this page) — carry both into Figma as light/dark variable modes rather than one static palette.</li>
+      </ul>
+
+      <h3 class="sub">Type</h3>
+      <div class="type-scale">
+        <div><span class="tlabel">Display / h1</span><span class="tsample" style="font-size:2.25rem;">Archivo 800</span></div>
+        <div><span class="tlabel">Heading / h2</span><span class="tsample" style="font-size:1.5rem;">Archivo 700</span></div>
+        <div><span class="tlabel">Subhead / h3</span><span class="tsample" style="font-size:1.05rem;">Archivo 600</span></div>
+        <div><span class="tlabel">Body</span><span class="tsample" style="font-family:'Source Sans 3'; font-weight:400; font-size:0.97rem;">Source Sans 3, regular — this is what a finding's evidence and recommendation text reads in.</span></div>
+        <div><span class="tlabel">Mono / label</span><span class="tsample mono" style="font-weight:500; font-size:0.85rem;">JetBrains Mono — SHAs, status pills, eyebrows, routes, raw metadata</span></div>
+      </div>
+
+      <h3 class="sub">Spacing &amp; radius</h3>
+      <div class="spacing-scale">
+        <div><div class="bar" style="width:14px; height:4px;"></div><div class="slabel">4</div></div>
+        <div><div class="bar" style="width:14px; height:8px;"></div><div class="slabel">8</div></div>
+        <div><div class="bar" style="width:14px; height:14px;"></div><div class="slabel">14</div></div>
+        <div><div class="bar" style="width:14px; height:22px;"></div><div class="slabel">22</div></div>
+        <div><div class="bar" style="width:14px; height:32px;"></div><div class="slabel">32</div></div>
+        <div><div class="bar" style="width:14px; height:44px;"></div><div class="slabel">44</div></div>
+      </div>
+      <ul class="notes">
+        <li>Radius: 4px for pills/badges/small controls, 8px for cards and panels. Nothing larger — this is an operator tool, not a marketing surface, and sharper corners read as more instrumented.</li>
+      </ul>
+    </section>
+
+    <footer class="end">reviewrush · dashboard design spec · prepared for Figma handoff</footer>
+  </main>
+</div>

@@ -1,7 +1,4 @@
-// Mirrors the response shapes returned by app/api/v1/dashboard.py.
-// Kept as plain interfaces (not generated) since the backend has no OpenAPI
-// client-generation step wired up yet - update these alongside the backend
-// route when a field changes.
+// Backend-facing dashboard contracts. Keep these in step with app/api/v1/dashboard.py.
 
 export interface Me {
   github_user_id: number;
@@ -25,7 +22,7 @@ export interface RepositorySummary {
   disconnected_at: string | null;
 }
 
-export type RunStatus = "complete" | "cancelled" | "oversized" | string;
+export type RunStatus = "complete" | "cancelled" | "oversized" | "queued" | "running" | string;
 
 export interface RunSummary {
   id: number;
@@ -37,12 +34,66 @@ export interface RunSummary {
   created_at: string;
 }
 
+export interface ChangedFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface ToolRunPayload {
+  check_name: string;
+  category: string;
+  status?: string;
+  conclusion: string;
+  required: boolean;
+  duration_ms: number;
+  summary: string;
+}
+
+export interface FindingPayload {
+  id?: number;
+  file: string;
+  start_line: number;
+  end_line: number;
+  severity: string;
+  category: string;
+  title: string;
+  evidence?: string;
+  recommendation: string;
+}
+
+export interface AIReviewPayload {
+  status: string;
+  decision: string | null;
+  risk: string | null;
+  confidence: number | null;
+  summary: string;
+  provider: string;
+  model: string;
+  findings: FindingPayload[];
+}
+
+export interface PolicyDecisionPayload {
+  decision: string;
+  risk: string;
+  reasons: string[];
+  policy_version: string;
+}
+
+export interface MergeAttemptPayload {
+  outcome: string;
+  reasons: string[];
+  created_at: string;
+}
+
 export interface RunDetail {
-  diff_snapshot: Record<string, unknown>;
-  tool_runs: Record<string, unknown>[];
-  ai_review: Record<string, unknown> | null;
-  policy_decision: Record<string, unknown> | null;
-  merge_attempts: Record<string, unknown>[];
+  run: RunSummary;
+  changed_files: ChangedFile[];
+  tool_runs: ToolRunPayload[];
+  ai_review: AIReviewPayload | null;
+  policy_decision: PolicyDecisionPayload | null;
+  merge_attempts: MergeAttemptPayload[];
   [key: string]: unknown;
 }
 
@@ -83,6 +134,62 @@ export interface TaskFailure {
   created_at: string;
 }
 
-// Metrics is intentionally untyped (compute_repository_metrics' shape isn't
-// fixed/documented) - rendered as raw JSON, same as the previous dashboard.
 export type RepositoryMetrics = Record<string, unknown>;
+
+export interface Organization {
+  id: number;
+  slug: string;
+  name: string;
+  role: string;
+  plan: string;
+  region: string;
+  retention_days_default: number | null;
+  ai_provider_override: string | null;
+  ai_model_override: string | null;
+  max_ai_reviews_per_day: number | null;
+  max_repositories: number | null;
+}
+
+export interface DatasetVersion {
+  id: number;
+  version: number;
+  item_count: number;
+  created_at: string;
+}
+
+export interface EvaluationRun {
+  id: number;
+  run_type: string;
+  dataset_version_id: number | null;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  policy_version: string;
+  status: string;
+  case_count: number;
+  metrics: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface Promotion {
+  id: number;
+  eval_run_id: number;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  policy_version: string;
+  created_at: string;
+}
+
+export interface FinetuneJob {
+  id: string | number;
+  model?: string;
+  base_model?: string;
+  output_model?: string | null;
+  method: string;
+  status: string;
+  created_at: string;
+  metrics?: Record<string, unknown>;
+  log?: string[];
+}

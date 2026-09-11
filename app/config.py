@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     analysis_default_image: str = Field(default="python:3.12-slim")
     analysis_workdir: str = Field(default="/var/lib/reviewrush/analysis")
     analysis_volume_name: str = Field(default="reviewrush_analysis_workspace")
+    analysis_sandbox_dns_server: str | None = Field(default=None)
     analysis_timeout_seconds: int = Field(default=600)
     analysis_memory_limit_mb: int = Field(default=512)
     analysis_cpu_limit: float = Field(default=1.0)
@@ -75,9 +76,9 @@ class Settings(BaseSettings):
     ai_max_prompt_bytes: int = Field(default=400_000)
     ai_max_issues: int = Field(default=50)
 
-    # AI auto-fix: global kill switch, off by default. A repo must also opt
-    # in via `.reviewrush.yml: auto_fix.enabled` - both layers are required,
-    # matching how auto-merge is gated (see app/repo_config.py:MergeConfig).
+    # AI auto-fix: global kill switch, off by default. When enabled it is the
+    # application-wide default for connected repositories; a repository can
+    # explicitly opt out with `.reviewrush.yml: auto_fix.enabled: false`.
     autofix_enabled: bool = Field(default=False)
     autofix_max_fixes_per_snapshot: int = Field(default=3)
     autofix_max_output_tokens: int = Field(default=2048)

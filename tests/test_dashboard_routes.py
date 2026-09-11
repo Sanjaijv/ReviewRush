@@ -36,7 +36,17 @@ def test_login_redirects_to_github(client: TestClient) -> None:
 
     assert response.status_code == 302
     assert response.headers["location"].startswith("https://github.com/login/oauth/authorize")
-    assert "rr_oauth_state" in response.cookies
+    state_cookies = [name for name in response.cookies if name.startswith("rr_oauth_state_")]
+    assert len(state_cookies) == 1
+
+
+def test_parallel_logins_use_independent_state_cookies(client: TestClient) -> None:
+    first = client.get("/api/v1/dashboard/auth/login", follow_redirects=False)
+    second = client.get("/api/v1/dashboard/auth/login", follow_redirects=False)
+
+    first_cookie = next(name for name in first.cookies if name.startswith("rr_oauth_state_"))
+    second_cookie = next(name for name in second.cookies if name.startswith("rr_oauth_state_"))
+    assert first_cookie != second_cookie
 
 
 def test_login_is_disabled_when_dashboard_disabled() -> None:

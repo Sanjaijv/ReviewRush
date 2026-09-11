@@ -257,7 +257,9 @@ def _verify_fix(
     """
     stages = build_all_stages(repo_config, settings, workspace_host_path)
     runner = DockerCliSandboxRunner(
-        docker_binary=settings.analysis_docker_binary, volume_name=settings.analysis_volume_name
+        docker_binary=settings.analysis_docker_binary,
+        volume_name=settings.analysis_volume_name,
+        dns_server=settings.analysis_sandbox_dns_server,
     )
     for stage in stages:
         if stage.skip_reason is not None:
@@ -671,7 +673,9 @@ def run_manual_fix(
     config_yaml = client.get_file_contents(
         repository.owner, repository.name, REPO_CONFIG_PATH, ref=diff_snapshot.head_sha
     )
-    repo_config = parse_repo_config(config_yaml)
+    repo_config = parse_repo_config(
+        config_yaml, default_auto_fix_enabled=settings.autofix_enabled
+    )
     if not manual_fix_eligible(finding, repo_config, settings):
         return None
     return apply_manual_fix(
@@ -697,7 +701,9 @@ def run_auto_fix_for_snapshot(
     config_yaml = client.get_file_contents(
         repository.owner, repository.name, REPO_CONFIG_PATH, ref=diff_snapshot.head_sha
     )
-    repo_config = parse_repo_config(config_yaml)
+    repo_config = parse_repo_config(
+        config_yaml, default_auto_fix_enabled=settings.autofix_enabled
+    )
     if not repo_config.auto_fix.enabled:
         return []
 

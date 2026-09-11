@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+compose_file="${project_dir}/docker-compose.bundle.yml"
+env_file="${project_dir}/.env"
+
+if [[ ! -f "${env_file}" ]]; then
+  cp "${project_dir}/.env.example" "${env_file}"
+  echo "Created ${env_file}. Add your GitHub App and AI-provider credentials, then run: ./reviewrush up"
+  exit 1
+fi
+
+compose=(docker compose --env-file "${env_file}" -f "${compose_file}")
+command="${1:-help}"
+
+case "${command}" in
+  up)
+    "${compose[@]}" up -d --build --remove-orphans
+    "${compose[@]}" ps
+    published_address="$("${compose[@]}" port web 3000)"
+    echo "ReviewRush is available at http://${published_address}"
+    ;;
+  down)
+    "${compose[@]}" down
+    ;;
+  restart)
+    "${compose[@]}" restart api worker web
+    ;;
+  logs)
+    shift
+    if (( $# )); then
+      "${compose[@]}" logs -f "$@"
+    else
+      "${compose[@]}" logs -f
+    fi
+    ;;
+  status)
+    "${compose[@]}" ps
+    ;;
+  update)
+    "${compose[@]}" build migrate
+    "${compose[@]}" up -d
+    ;;
+  *)
+    echo "Usage: ./reviewrush {up|down|restart|logs|status|update}"
+    exit 2
+    ;;
+esac
