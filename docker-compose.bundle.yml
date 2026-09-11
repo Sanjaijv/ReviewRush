@@ -1,0 +1,123 @@
+name: reviewrush
+
+x-reviewrush-environment: &reviewrush-environment
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://reviewrush:${POSTGRES_PASSWORD:-reviewrush}@postgres:5432/reviewrush
+    REDIS_URL: redis://redis:6379/0
+
+x-reviewrush-service: &reviewrush-service
+  image: reviewrush:${REVIEWRUSH_VERSION:-local}
+  init: true
+  restart: unless-stopped
+  <<: *reviewrush-environment
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reviewrush
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reviewrush}
+      POSTGRES_DB: reviewrush
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviewrush -d reviewrush"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: reviewrush:${REVIEWRUSH_VERSION:-local}
+    build:
+      context: .
+      target: bundle
+      args:
+        BACKEND_ORIGIN: http://api:8000
+    restart: "no"
+    <<: *reviewrush-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *reviewrush-service
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    <<: *reviewrush-service
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "--loglevel=INFO"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://reviewrush:${POSTGRES_PASSWORD:-reviewrush}@postgres:5432/reviewrush
+      REDIS_URL: redis://redis:6379/0
+      ANALYSIS_WORKDIR: /var/lib/reviewrush/analysis
+      ANALYSIS_VOLUME_NAME: reviewrush_analysis_workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - analysis_workspace:/var/lib/reviewrush/analysis
+
+  web:
+    <<: *reviewrush-service
+    working_dir: /srv/frontend
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]
+    ports:
+      - "${REVIEWRUSH_PORT:-3010}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres_data:
+  redis_data:
+  analysis_workspace:
+    name: reviewrush_analysis_workspace

@@ -48,14 +48,35 @@ def _tool_run_lines(tool_runs: list[ToolRun]) -> list[str]:
 
 
 def _finding_lines(findings: list[AIFinding]) -> list[str]:
-    if not findings:
-        return ["- No AI findings."]
     severity_icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "⚪"}
     return [
         f"- {severity_icons.get(f.severity, '❓')} **{f.severity}/{f.category}** "
         f"`{f.file}:{f.start_line}` — {f.title}"
         for f in findings
     ]
+
+
+def _tool_finding_lines(tool_runs: list[ToolRun], limit: int = 25) -> list[str]:
+    """Render deterministic-tool annotations in the PR summary as well as
+    attaching them to the GitHub Check Run. This keeps concrete Semgrep and
+    Gitleaks issues visible when the AI reviewer is unavailable.
+    """
+    entries = [
+        (run.check_name, annotation)
+        for run in tool_runs
+        for annotation in (run.annotations or [])
+    ]
+    lines = []
+    for check_name, annotation in entries[:limit]:
+        severity = str(annotation.get("severity") or "unknown").lower()
+        file = annotation.get("file") or "unknown file"
+        line = annotation.get("line")
+        location = f"{file}:{line}" if line else str(file)
+        message = annotation.get("message") or "Finding reported by tool"
+        lines.append(f"- **{severity}/{check_name}** `{location}` — {message}")
+    if len(entries) > limit:
+        lines.append(f"- _{len(entries) - limit} additional deterministic finding(s) omitted._")
+    return lines
 
 
 def render_summary_markdown(
@@ -80,7 +101,11 @@ def render_summary_markdown(
     lines.extend(_tool_run_lines(tool_runs))
     lines.append("")
     lines.append("### Findings")
+    tool_finding_lines = _tool_finding_lines(tool_runs)
+    lines.extend(tool_finding_lines)
     lines.extend(_finding_lines(findings))
+    if not tool_finding_lines and not findings:
+        lines.append("- No findings reported.")
     without_inline = [f for f in findings if f.id not in inline_posted_findings]
     if without_inline:
         lines.append("")

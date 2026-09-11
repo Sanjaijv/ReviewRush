@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from dataclasses import dataclass
 from urllib.parse import urlencode
@@ -11,6 +12,7 @@ GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_API_BASE_URL = "https://api.github.com"
 
 STATE_COOKIE_NAME = "rr_oauth_state"
+STATE_COOKIE_PREFIX = f"{STATE_COOKIE_NAME}_"
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,18 @@ class GitHubUser:
 
 def new_state() -> str:
     return secrets.token_urlsafe(32)
+
+
+def state_cookie_name(state: str) -> str:
+    """Return a cookie name unique to one OAuth attempt.
+
+    A fixed cookie name makes a second login tab overwrite the first tab's
+    state. It can also leave local development stuck behind an older Secure
+    cookie that an HTTP response cannot replace. The state is random already;
+    hashing it keeps the cookie name short and restricted to safe characters.
+    """
+    digest = hashlib.sha256(state.encode("utf-8")).hexdigest()[:20]
+    return f"{STATE_COOKIE_PREFIX}{digest}"
 
 
 def build_authorize_url(settings: Settings, *, redirect_uri: str, state: str) -> str:

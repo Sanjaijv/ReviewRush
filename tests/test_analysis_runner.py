@@ -102,6 +102,23 @@ def test_build_args_network_enabled_uses_bridge() -> None:
     assert args[args.index("--network") + 1] == "bridge"
 
 
+def test_build_args_network_enabled_uses_configured_dns() -> None:
+    runner = DockerCliSandboxRunner(
+        docker_binary="docker",
+        volume_name="reviewrush_analysis_ws",
+        dns_server="8.8.8.8",
+    )
+    args = runner._build_args(
+        image="img",
+        command="cmd",
+        run_subdir="x",
+        limits=_limits(network_enabled=True),
+        env=None,
+        container_name="n",
+    )
+    assert args[args.index("--dns") + 1] == "8.8.8.8"
+
+
 def test_run_success_maps_exit_code_and_output() -> None:
     runner = _runner()
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"ok\n", stderr=b"")

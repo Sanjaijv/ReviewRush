@@ -1,4 +1,5 @@
 import logging
+import secrets
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +32,7 @@ from app.dashboard.oauth import (
     fetch_accessible_installation_ids,
     fetch_authenticated_user,
     new_state,
+    state_cookie_name,
 )
 from app.dashboard.reliability import (
     TaskFailureNotFound,
@@ -77,7 +79,7 @@ def login(response: Response, settings: Settings = Depends(get_settings)) -> Res
 
     redirect = Response(status_code=status.HTTP_302_FOUND, headers={"Location": authorize_url})
     redirect.set_cookie(
-        STATE_COOKIE_NAME,
+        state_cookie_name(state),
         state,
         max_age=600,
         httponly=True,
@@ -95,8 +97,13 @@ def callback(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     _require_dashboard_enabled(settings)
-    expected_state = request.cookies.get(STATE_COOKIE_NAME)
-    if not expected_state or state != expected_state:
+    oauth_cookie_name = state_cookie_name(state)
+    # Keep the fixed-name lookup temporarily so a login started before this
+    # deployment can still finish. New attempts always use the isolated name.
+    expected_state = request.cookies.get(oauth_cookie_name) or request.cookies.get(
+        STATE_COOKIE_NAME
+    )
+    if not expected_state or not secrets.compare_digest(state, expected_state):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid oauth state")
 
     redirect_uri = f"{settings.dashboard_base_url.rstrip('/')}{_CALLBACK_PATH}"
@@ -150,6 +157,7 @@ def callback(
         # old static-HTML dashboard's mount point in app/main.py).
         headers={"Location": f"{settings.dashboard_base_url.rstrip('/')}/"},
     )
+    redirect.delete_cookie(oauth_cookie_name)
     redirect.delete_cookie(STATE_COOKIE_NAME)
     redirect.set_cookie(
         SESSION_COOKIE_NAME,

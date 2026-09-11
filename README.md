@@ -1,5 +1,27 @@
 # ReviewRush
 
+## Packaged installation
+
+ReviewRush ships as one versioned application image shared by its API,
+background worker, migration job, and web UI. PostgreSQL and Redis remain
+private, persistent services inside the same Compose project.
+
+```bash
+cp .env.example .env
+# Add the GitHub App credentials and AI provider key to .env, then:
+./reviewrush up
+```
+
+Open `http://localhost:3010`. Use the same public origin plus
+`/api/v1/github/webhook` as the GitHub App webhook URL. Useful lifecycle
+commands are `./reviewrush status`, `./reviewrush logs`, `./reviewrush update`,
+and `./reviewrush down`. Set `REVIEWRUSH_PORT` or `POSTGRES_PASSWORD` in `.env`
+to override their packaged defaults.
+
+The bundle automatically waits for PostgreSQL and Redis, applies database
+migrations once, then starts the API, worker, and UI. Only the UI/API proxy
+port is published; database and Redis ports are not exposed to the host.
+
 AI-assisted GitHub code-review and merge system. This repository currently implements
 **Phase 1 — Project foundation** and **Phase 2 — GitHub App and secure webhook
 ingestion**: the backend scaffold, local development environment, and a signed,
@@ -350,18 +372,20 @@ human pushing the same commit would.
 
 ### Enabling it
 
-Requires **both** a global switch and per-repository consent - either alone
-does nothing:
+Enable the application-wide switch:
 
 ```bash
 # .env
 AUTOFIX_ENABLED=true
 ```
 
+Every connected repository then inherits the existing workflow. A repository
+can override the severity ceiling or explicitly opt out:
+
 ```yaml
-# .reviewrush.yml
+# .reviewrush.yml (optional)
 auto_fix:
-  enabled: true
+  enabled: false          # opt out; omit this field to inherit the app default
   maximum_severity: low   # or "medium" - never higher
 ```
 

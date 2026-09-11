@@ -41,9 +41,10 @@ class MergeConfig(BaseModel):
 
 
 class AutoFixConfig(BaseModel):
-    """Repo-level consent for AI auto-fix PRs (off by default). This is one
-    of two required layers - `settings.autofix_enabled` (an operator-level
-    global kill switch) must also be true, or nothing here takes effect.
+    """Repository override for AI auto-fix behavior. The standalone schema
+    default remains off; runtime parsing may inherit an enabled operator-level
+    `settings.autofix_enabled` default when the repository did not explicitly
+    opt out. The global switch must always be true or nothing takes effect.
     `maximum_severity` can only ever be raised as high as "medium": findings
     tagged "security" are never eligible regardless of this config, and
     "high"/"critical" is not an accepted value here - both are enforced in
@@ -76,16 +77,22 @@ class RepoConfig(BaseModel):
     auto_fix: AutoFixConfig = Field(default_factory=AutoFixConfig)
 
 
-def parse_repo_config(raw_yaml: str | None) -> RepoConfig:
+def parse_repo_config(
+    raw_yaml: str | None, *, default_auto_fix_enabled: bool = False
+) -> RepoConfig:
     """Parse `.reviewrush.yml` content, failing closed to safe defaults.
 
     A missing file, empty file, invalid YAML, or a document that fails schema
-    validation all resolve to the default RepoConfig (no branch override,
-    auto-merge disabled) rather than raising — callers fall back to
-    repository-level settings for anything the config doesn't provide.
+    validation never raises. Runtime callers may inherit auto-fix from the
+    operator's global switch via `default_auto_fix_enabled`; an explicit
+    repository value always wins. Invalid configuration still fails closed
+    with auto-fix disabled rather than inheriting a write-capable default.
     """
+    inherited_defaults = RepoConfig(
+        auto_fix=AutoFixConfig(enabled=default_auto_fix_enabled)
+    )
     if not raw_yaml or not raw_yaml.strip():
-        return RepoConfig()
+        return inherited_defaults
 
     try:
         data = yaml.safe_load(raw_yaml)
@@ -94,14 +101,21 @@ def parse_repo_config(raw_yaml: str | None) -> RepoConfig:
         return RepoConfig()
 
     if data is None:
-        return RepoConfig()
+        return inherited_defaults
 
     if not isinstance(data, dict):
         logger.warning("failed to parse .reviewrush.yml: document is not a mapping")
         return RepoConfig()
 
     try:
-        return RepoConfig.model_validate(data)
+        effective_data = dict(data)
+        if default_auto_fix_enabled:
+            auto_fix = effective_data.get("auto_fix")
+            if auto_fix is None:
+                effective_data["auto_fix"] = {"enabled": True}
+            elif isinstance(auto_fix, dict) and "enabled" not in auto_fix:
+                effective_data["auto_fix"] = {**auto_fix, "enabled": True}
+        return RepoConfig.model_validate(effective_data)
     except ValidationError as exc:
         logger.warning("invalid .reviewrush.yml, using defaults: %s", exc)
         return RepoConfig()

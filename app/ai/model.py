@@ -157,10 +157,10 @@ class GroqReviewModel:
         self, *, system: str, messages: list[dict[str, str]], response_schema: dict[str, Any]
     ) -> ModelResponse:
         started = time.monotonic()
-        # Unlike Ollama's structural "format" json-schema constraint, Groq's
-        # json_object mode only guarantees syntactically valid JSON - it has
-        # no notion of the target field names, so the schema must be spelled
-        # out in the prompt text itself for the model to follow it.
+        # Groq's provider-side JSON modes can return `json_validate_failed`
+        # without any generated content for GPT-OSS. Keep the schema in the
+        # prompt and let ReviewRush perform its existing JSON parse, Pydantic
+        # validation, repair pass, and immutable-diff boundary checks.
         schema_system = (
             f"{system}\n\nThe JSON object you return MUST conform to this JSON "
             f"Schema:\n{json.dumps(response_schema)}"
@@ -168,8 +168,8 @@ class GroqReviewModel:
         payload = {
             "model": self._model,
             "messages": [{"role": "system", "content": schema_system}, *messages],
-            "response_format": {"type": "json_object"},
-            "max_tokens": self._max_output_tokens,
+            "reasoning_effort": "low",
+            "max_completion_tokens": self._max_output_tokens,
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
@@ -188,13 +188,20 @@ class GroqReviewModel:
                 error="groq request timed out",
             )
         except httpx.HTTPError as exc:
+            detail = ""
+            if isinstance(exc, httpx.HTTPStatusError):
+                # Provider validation failures include the actionable reason
+                # in the response body (for example an unsupported schema or
+                # a failed structured-output generation). Keep it bounded so
+                # logs/database rows cannot grow without limit.
+                detail = f": {exc.response.text[:2000]}"
             return ModelResponse(
                 content=None,
                 raw_text="",
                 prompt_tokens=0,
                 completion_tokens=0,
                 latency_ms=int((time.monotonic() - started) * 1000),
-                error=f"groq request failed: {exc}",
+                error=f"groq request failed: {exc}{detail}",
             )
 
         latency_ms = int((time.monotonic() - started) * 1000)

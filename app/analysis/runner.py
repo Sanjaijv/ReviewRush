@@ -94,11 +94,13 @@ class DockerCliSandboxRunner:
         *,
         docker_binary: str,
         volume_name: str,
+        dns_server: str | None = None,
         container_workspace_root: str = "/workspace-root",
         container_scratch_dir: str = "/work",
     ) -> None:
         self._docker_binary = docker_binary
         self._volume_name = volume_name
+        self._dns_server = dns_server
         self._container_workspace_root = container_workspace_root
         self._container_scratch_dir = container_scratch_dir
 
@@ -128,6 +130,10 @@ class DockerCliSandboxRunner:
             container_name,
             "--network",
             "bridge" if limits.network_enabled else "none",
+        ]
+        if limits.network_enabled and self._dns_server:
+            args.extend(["--dns", self._dns_server])
+        args.extend([
             "--memory",
             f"{limits.memory_mb}m",
             "--memory-swap",
@@ -160,7 +166,7 @@ class DockerCliSandboxRunner:
             f"{self._volume_name}:{self._container_workspace_root}:ro",
             "-w",
             scratch,
-        ]
+        ])
         for key, value in (env or {}).items():
             args.extend(["-e", f"{key}={value}"])
         # Explicit --entrypoint override: some tool images (e.g.

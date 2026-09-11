@@ -149,3 +149,40 @@ def test_render_summary_markdown_includes_decision_risk_and_next_action() -> Non
     assert "Missing ownership check" in body
     assert "human reviewer must approve" in body
     assert "abc123" in body
+
+
+def test_render_summary_markdown_includes_deterministic_findings_without_ai() -> None:
+    decision = PolicyDecision(
+        policy_version="1",
+        decision="BLOCK",
+        risk="CRITICAL",
+        reasons=["required check 'semgrep' failed"],
+        evidence={},
+    )
+    tool_run = ToolRun(
+        check_name="semgrep",
+        category="security",
+        conclusion="failed",
+        required=True,
+        annotations=[{
+            "file": "src/app.py",
+            "line": 12,
+            "end_line": 12,
+            "severity": "error",
+            "message": "Detected SQL injection risk",
+        }],
+    )
+
+    body = render_summary_markdown(
+        decision=decision,
+        ai_review=None,
+        tool_runs=[tool_run],
+        findings=[],
+        inline_posted_findings=set(),
+        head_sha="abc123",
+    )
+
+    assert "error/semgrep" in body
+    assert "src/app.py:12" in body
+    assert "Detected SQL injection risk" in body
+    assert "No AI findings" not in body
